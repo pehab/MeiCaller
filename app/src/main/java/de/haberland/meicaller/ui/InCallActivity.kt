@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.ContactsContract
 import android.telecom.Call
 import android.telecom.CallAudioState
@@ -73,12 +74,28 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Activity displayed during an active or incoming phone call.
+ * It provides UI for answering, rejecting, hanging up, and controlling audio (mute, speaker).
+ */
 class InCallActivity : ComponentActivity() {
+    private var proximityWakeLock: PowerManager.WakeLock? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Ensure the activity is visible over the lock screen and wakes up the display
         setShowWhenLocked(true)
         setTurnScreenOn(true)
+
+        // Initialize Proximity WakeLock to turn off screen when phone is held to ear
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        if (powerManager.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) {
+            proximityWakeLock = powerManager.newWakeLock(
+                PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK,
+                "MeiCaller:ProximityWakeLock"
+            )
+        }
 
         setContent {
             val settings by UiSettingsStore.flow(this).collectAsState(initial = UiSettings())
@@ -88,17 +105,67 @@ class InCallActivity : ComponentActivity() {
                 accentHex = settings.accentHex,
             ) {
                 Surface(Modifier.fillMaxSize()) {
-                    InCallRoot(settings = settings, onFinish = { finishAndRemoveTask() })
+                    InCallRoot(
+                        settings = settings,
+                        onFinish = { finishAndRemoveTask() },
+                        onCallStateChanged = { state ->
+                            handleProximitySensor(state)
+                        }
+                    )
                 }
             }
         }
     }
+
+    /**
+     * Activates or deactivates the proximity sensor based on the call state.
+     * The screen should turn off when held to the ear during an active call.
+     */
+    private fun handleProximitySensor(state: Int) {
+        val wakeLock = proximityWakeLock ?: return
+        val shouldBeActive = when (state) {
+            Call.STATE_ACTIVE, Call.STATE_DIALING, Call.STATE_CONNECTING -> true
+            else -> false
+        }
+
+        if (shouldBeActive) {
+            if (!wakeLock.isHeld) {
+                // Acquire for a maximum of 10 minutes to avoid battery drain if something goes wrong
+                wakeLock.acquire(10 * 60 * 1000L)
+            }
+        } else {
+            if (wakeLock.isHeld) {
+                wakeLock.release()
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Re-evaluate proximity sensor when returning to foreground
+        CallRepo.call()?.details?.state?.let { handleProximitySensor(it) }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Release WakeLock in onPause to follow best practices and save battery
+        if (proximityWakeLock?.isHeld == true) {
+            proximityWakeLock?.release()
+        }
+    }
 }
 
+/**
+ * Root component of the InCall UI, handling background images and layout constraints.
+ * @param settings Current UI settings.
+ * @param onFinish Callback when the activity should be closed.
+ * @param onCallStateChanged Callback to notify the activity about call state changes.
+ */
 @Composable
 private fun InCallRoot(
     settings: UiSettings,
     onFinish: () -> Unit,
+    onCallStateChanged: (Int) -> Unit
 ) {
     val context = LocalContext.current
 
@@ -108,6 +175,7 @@ private fun InCallRoot(
             liveNumber?.takeIf { it.isNotBlank() }?.let { normalizeForCompare(it) }.orEmpty()
         }
 
+    // Load custom contact background if available, otherwise fallback to global setting
     val contactBgUri by if (normalized.isNotBlank()) {
         ContactBackgroundStore.backgroundUriFlow(context, normalized).collectAsState(initial = null)
     } else {
@@ -127,6 +195,7 @@ private fun InCallRoot(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
             )
+            // Add a semi-transparent overlay to ensure text readability
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background.copy(alpha = 0.55f),
@@ -138,6 +207,7 @@ private fun InCallRoot(
             rejectUri = settings.rejectButtonUri,
             onFinish = onFinish,
             onNumberObserved = { n -> liveNumber = n },
+            onCallStateChanged = onCallStateChanged,
             modifier =
                 Modifier
                     .fillMaxSize()
@@ -148,6 +218,9 @@ private fun InCallRoot(
     }
 }
 
+/**
+ * Main screen for call interaction, managing call state and caller information.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun InCallScreen(
@@ -155,6 +228,7 @@ private fun InCallScreen(
     rejectUri: String?,
     onFinish: () -> Unit,
     onNumberObserved: (String?) -> Unit,
+    onCallStateChanged: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -182,23 +256,22 @@ private fun InCallScreen(
         return
     }
 
-    // Keep initial state without touching deprecated audio APIs
+    // Track call state using the details provider
     var callState by remember {
         mutableIntStateOf(call.details?.state ?: Call.STATE_NEW)
     }
 
-    // Caller info
+    // Caller information state
     var displayName by remember { mutableStateOf<String?>(null) }
     var number by remember { mutableStateOf<String?>(null) }
     var systemName by remember { mutableStateOf<String?>(null) }
-
-    // Contact bits
     var contactPhotoUri by remember { mutableStateOf<String?>(null) }
     var contactLabel by remember { mutableStateOf<String?>(null) }
 
-    // DTMF bottom sheet
+    // DTMF bottom sheet visibility
     var showDtmf by remember { mutableStateOf(false) }
 
+    /** Extracts the raw phone number from the call details. */
     fun extractNumberFromCall(): String? {
         val details = call.details
         val h: Uri? = details?.handle
@@ -209,11 +282,13 @@ private fun InCallScreen(
         }
     }
 
+    /** Extracts the name provided by the system/telecom service. */
     fun extractSystemName(): String? {
         val details = call.details
         return details?.callerDisplayName?.takeIf { it.isNotBlank() }
     }
 
+    /** Updates caller info by querying the contact provider asynchronously. */
     suspend fun updateCallerInfoAsync() {
         val num = extractNumberFromCall()
         number = num
@@ -250,14 +325,13 @@ private fun InCallScreen(
         }
     }
 
-    // initial caller info
+    // Initial setup and audio state refresh
     LaunchedEffect(call) {
         updateCallerInfoAsync()
-        // refresh audio state (repo decides modern/legacy)
         CallRepo.refreshFromService(service)
     }
 
-    // state changes
+    // Listen for call state changes via callback
     DisposableEffect(call) {
         val callback =
             object : Call.Callback() {
@@ -265,7 +339,6 @@ private fun InCallScreen(
                     call: Call,
                     ignored: Int,
                 ) {
-                    // use non-deprecated source of truth
                     callState = call.details?.state ?: callState
                 }
             }
@@ -273,9 +346,10 @@ private fun InCallScreen(
         onDispose { call.unregisterCallback(callback) }
     }
 
-    // refresh info on state change
+    // Refresh info when state changes; finish activity if disconnected
     LaunchedEffect(callState) {
         updateCallerInfoAsync()
+        onCallStateChanged(callState)
         if (callState == Call.STATE_DISCONNECTED) onFinish()
     }
 
@@ -296,6 +370,7 @@ private fun InCallScreen(
             callState == Call.STATE_CONNECTING ||
             callState == Call.STATE_HOLDING
 
+    // Dialpad for DTMF tones
     if (showDtmf && isActiveLike) {
         ModalBottomSheet(
             onDismissRequest = { },
@@ -384,6 +459,9 @@ private fun InCallScreen(
     }
 }
 
+/**
+ * Header section showing the caller's name, number, and photo.
+ */
 @Composable
 private fun CallerHeader(
     name: String,
@@ -452,6 +530,9 @@ private fun CallerHeader(
     }
 }
 
+/**
+ * Controls for incoming calls (Accept/Reject).
+ */
 @Composable
 private fun IncomingControlsBottom(
     acceptUri: String?,
@@ -483,6 +564,9 @@ private fun IncomingControlsBottom(
     }
 }
 
+/**
+ * Controls for an active call (Mute, Speaker, Dialpad, Hangup).
+ */
 @Composable
 private fun ActiveControlsBottom(
     rejectUri: String?,
@@ -552,6 +636,9 @@ private fun ActiveControlsBottom(
     }
 }
 
+/**
+ * A toggleable button with an icon and label, styled as a pill.
+ */
 @Composable
 private fun IconTogglePill(
     label: String,
@@ -583,6 +670,9 @@ private fun IconTogglePill(
     }
 }
 
+/**
+ * A circular button that can display a custom image or fallback text.
+ */
 @Composable
 private fun FlatRoundImageButton(
     label: String,
@@ -625,6 +715,9 @@ private fun FlatRoundImageButton(
     }
 }
 
+/**
+ * UI for sending DTMF tones during a call.
+ */
 @Composable
 private fun DtmfPad(
     onTone: (Char) -> Unit,
@@ -633,6 +726,7 @@ private fun DtmfPad(
 ) {
     val scope = rememberCoroutineScope()
 
+    /** Sends a short DTMF tone. */
     fun press(ch: Char) {
         scope.launch {
             onTone(ch)
@@ -684,12 +778,16 @@ private fun DtmfPad(
     }
 }
 
+/** Holds contact information found via phone lookup. */
 private data class ContactInfo(
     val name: String?,
     val photoUri: String?,
     val label: String?,
 )
 
+/**
+ * Looks up contact information (name, photo, phone label) based on a phone number.
+ */
 private suspend fun lookupContactInfoByNumber(
     context: Context,
     rawNumber: String,
@@ -771,6 +869,7 @@ private suspend fun lookupContactInfoByNumber(
         ContactInfo(name = name, photoUri = photo, label = label)
     }
 
+/** Generates a set of possible number formats for more flexible contact matching. */
 private fun buildCompareCandidates(raw: String): Set<String> {
     val trimmed = raw.trim()
     if (trimmed.isEmpty()) return emptySet()
@@ -805,6 +904,7 @@ private fun buildCompareCandidates(raw: String): Set<String> {
     return candidates
 }
 
+/** Converts a system phone type integer to a localized human-readable string. */
 private fun toHumanPhoneLabel(
     type: Int,
     customLabel: String?,

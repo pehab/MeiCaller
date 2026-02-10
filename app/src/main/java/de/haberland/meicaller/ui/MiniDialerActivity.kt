@@ -11,10 +11,15 @@ import de.haberland.meicaller.data.UiSettings
 import de.haberland.meicaller.data.UiSettingsStore
 import de.haberland.meicaller.ui.theme.MeiCallerTheme
 
+/**
+ * A lightweight activity that opens a dialer pre-filled with a specific number.
+ * This is typically used when the user clicks on a "Call Back" action from a missed call notification or list.
+ */
 class MiniDialerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Extract the phone number from the intent data (e.g., tel:123456)
         val initialNumber = intent?.data?.schemeSpecificPart.orEmpty()
 
         setContent {
@@ -24,6 +29,7 @@ class MiniDialerActivity : ComponentActivity() {
 
             MeiCallerTheme(primaryHex = settings.primaryHex, accentHex = settings.accentHex) {
                 Surface(Modifier) {
+                    // Reuse the DialerTabScreen component to provide a consistent dialing experience
                     DialerTabScreen(
                         settings = settings,
                         initialNumber = initialNumber,

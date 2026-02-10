@@ -65,6 +65,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Represents a single entry in the system call log.
+ * @property nameOrNumber The contact name if available, otherwise the phone number.
+ * @property number The raw phone number.
+ * @property dateMillis The timestamp of the call in milliseconds.
+ * @property type The type of call (incoming, outgoing, missed, etc.).
+ */
 data class CallLogItem(
     val nameOrNumber: String,
     val number: String,
@@ -72,6 +79,10 @@ data class CallLogItem(
     val type: Int,
 )
 
+/**
+ * Screen displaying the list of recent calls.
+ * Allows users to view call history, place calls, and assign custom background images to numbers.
+ */
 @Composable
 fun CallLogTabScreen() {
     val context = LocalContext.current
@@ -83,12 +94,15 @@ fun CallLogTabScreen() {
 
     var refresh by remember { mutableIntStateOf(0) }
 
+    // State representing the list of calls loaded from the system provider
     val calls by produceState(initialValue = emptyList(), hasCallLog, refresh) {
         value = if (hasCallLog) loadCallLog(context) else emptyList()
     }
 
-    // Picker plumbing (OpenDocument -> persistable)
+    // State for the number currently being edited for a custom background
     var pendingBgKey by remember { mutableStateOf<String?>(null) }
+    
+    // File picker launcher for selecting background images
     val pickBg =
         androidx.activity.compose.rememberLauncherForActivityResult(
             contract = ActivityResultContracts.OpenDocument(),
@@ -96,6 +110,7 @@ fun CallLogTabScreen() {
             val key = pendingBgKey
             if (uri != null && !key.isNullOrBlank()) {
                 try {
+                    // Try to persist the permission so the image remains accessible after reboot
                     context.contentResolver.takePersistableUriPermission(
                         uri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION,
@@ -170,6 +185,10 @@ fun CallLogTabScreen() {
     }
 }
 
+/**
+ * A single row representing a call in the log.
+ * Shows call type icon, name/number, and timestamp.
+ */
 @Composable
 private fun CallLogRow(
     item: CallLogItem,
@@ -255,6 +274,10 @@ private fun CallLogRow(
     }
 }
 
+/**
+ * Loads recent calls from the system's CallLog provider.
+ * @param limit Maximum number of entries to fetch.
+ */
 private suspend fun loadCallLog(
     context: Context,
     limit: Int = 120,
@@ -299,6 +322,10 @@ private suspend fun loadCallLog(
         out
     }
 
+/**
+ * Places a call using the TelecomManager if permissions allow,
+ * otherwise falls back to showing the system dialer.
+ */
 private fun placeCall(
     context: Context,
     number: String,

@@ -12,14 +12,21 @@ import android.telecom.CallEndpoint
 import android.telecom.InCallService
 import de.haberland.meicaller.ui.InCallActivity
 
+/**
+ * Service that handles the lifecycle of phone calls.
+ * This service is bound by the system when a call is active.
+ * it manages the ringing state and launches the InCall UI.
+ */
 class MyInCallService : InCallService() {
     private var ringtone: Ringtone? = null
     private var vibrator: Vibrator? = null
 
     override fun onCreate() {
         super.onCreate()
+        // Register this service instance with the repository
         CallRepo.setService(this)
 
+        // Initialize vibrator for incoming calls
         vibrator =
             (getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
     }
@@ -32,16 +39,17 @@ class MyInCallService : InCallService() {
 
     override fun onCallAdded(call: Call) {
         super.onCallAdded(call)
+        // Store the new call in the repository
         CallRepo.setCall(call)
         CallRepo.refreshFromService(this)
 
-        // Klingeln starten, wenn Call bereits "ringing" ist
-        @Suppress("DEPRECATION") // call.state is flagged deprecated in some Java stubs; safe to use here
+        // Start ringing if the call is currently in the ringing state
+        @Suppress("DEPRECATION")
         if (call.state == Call.STATE_RINGING) {
             startRinging()
         }
 
-        // State-Callback: Klingeln stoppen sobald nicht mehr ringing
+        // Register a callback to stop ringing once the call state changes
         call.registerCallback(
             object : Call.Callback() {
                 override fun onStateChanged(
@@ -53,7 +61,7 @@ class MyInCallService : InCallService() {
             },
         )
 
-        // Call UI starten
+        // Automatically launch the in-call UI activity
         val i =
             Intent(this, InCallActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -68,6 +76,7 @@ class MyInCallService : InCallService() {
     }
 
     // ---- Modern audio callbacks (API 34+) ----
+
     override fun onMuteStateChanged(isMuted: Boolean) {
         super.onMuteStateChanged(isMuted)
         CallRepo.onMuteStateChanged(isMuted)
@@ -83,6 +92,9 @@ class MyInCallService : InCallService() {
         CallRepo.onAvailableEndpointsChanged(availableCallEndpoints)
     }
 
+    /**
+     * Plays the default system ringtone and starts vibration.
+     */
     private fun startRinging() {
         stopRinging()
 
@@ -108,6 +120,7 @@ class MyInCallService : InCallService() {
         val v = vibrator
         if (v != null && v.hasVibrator()) {
             try {
+                // Repeating vibration pattern: 0ms delay, 900ms on, 700ms off
                 val effect =
                     VibrationEffect.createWaveform(
                         longArrayOf(0, 900, 700),
@@ -119,6 +132,9 @@ class MyInCallService : InCallService() {
         }
     }
 
+    /**
+     * Stops any active ringtone or vibration.
+     */
     private fun stopRinging() {
         try {
             ringtone?.stop()

@@ -41,7 +41,12 @@ import de.haberland.meicaller.data.UiSettingsStore
 import de.haberland.meicaller.ui.theme.MeiCallerTheme
 import kotlinx.coroutines.launch
 
+/**
+ * Activity for managing application settings, such as theme colors and custom images
+ * for backgrounds and call buttons.
+ */
 class SettingsActivity : ComponentActivity() {
+    // Activity result launchers for picking images
     private val pickBackground =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let {
@@ -69,6 +74,9 @@ class SettingsActivity : ComponentActivity() {
             }
         }
 
+    /**
+     * Attempts to persist URI permissions so the images remain accessible after app restarts.
+     */
     private fun persistAndSave(
         uri: Uri,
         save: (Uri) -> Unit,
@@ -79,7 +87,7 @@ class SettingsActivity : ComponentActivity() {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION,
             )
         } catch (_: Throwable) {
-            // je nach Provider nicht möglich – dann evtl. nicht reboot-sicher
+            // Persistence might not be supported by the provider; the image might not load after reboot.
         }
         save(uri)
     }
@@ -123,6 +131,9 @@ class SettingsActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Main UI for the settings screen.
+ */
 @Composable
 private fun SettingsScreen(
     settings: UiSettings,
@@ -136,7 +147,7 @@ private fun SettingsScreen(
     onClearReject: () -> Unit,
     onClose: () -> Unit,
 ) {
-    // lokale Edit-Felder (damit Live-Update nicht beim Tippen “springt”)
+    // Local state for text fields to avoid cursor jumping during live updates
     var primary by remember(settings.primaryHex) { mutableStateOf(settings.primaryHex) }
     var accent by remember(settings.accentHex) { mutableStateOf(settings.accentHex) }
 
@@ -149,19 +160,19 @@ private fun SettingsScreen(
         Text("MeiCaller – Design", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(16.dp))
 
-        // Farben
+        // Color Settings Section
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
         ) {
             Column(Modifier.padding(14.dp)) {
-                Text("Farben", style = MaterialTheme.typography.titleMedium)
+                Text("Colors", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(10.dp))
 
                 OutlinedTextField(
                     value = primary,
                     onValueChange = { primary = it },
-                    label = { Text("Primary (Hex, z.B. #00E5FF)") },
+                    label = { Text("Primary (Hex, e.g., #00E5FF)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -171,7 +182,7 @@ private fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                 ) {
-                    Text("Primary speichern")
+                    Text("Save Primary")
                 }
 
                 Spacer(Modifier.height(14.dp))
@@ -179,7 +190,7 @@ private fun SettingsScreen(
                 OutlinedTextField(
                     value = accent,
                     onValueChange = { accent = it },
-                    label = { Text("Accent (Hex, z.B. #7C4DFF)") },
+                    label = { Text("Accent (Hex, e.g., #7C4DFF)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -189,12 +200,12 @@ private fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                 ) {
-                    Text("Accent speichern")
+                    Text("Save Accent")
                 }
 
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Tipp: Hex kann #RRGGBB oder #AARRGGBB sein.",
+                    "Tip: Hex format can be #RRGGBB or #AARRGGBB.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -202,13 +213,13 @@ private fun SettingsScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // Hintergrund
+        // Background Image Section
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
         ) {
             Column(Modifier.padding(14.dp)) {
-                Text("Hintergrund", style = MaterialTheme.typography.titleMedium)
+                Text("Background", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(10.dp))
 
                 if (!settings.backgroundUri.isNullOrBlank()) {
@@ -224,7 +235,7 @@ private fun SettingsScreen(
                     )
                     Spacer(Modifier.height(10.dp))
                 } else {
-                    Text("Kein Hintergrundbild gesetzt.", style = MaterialTheme.typography.bodyMedium)
+                    Text("No background image set.", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(10.dp))
                 }
 
@@ -236,7 +247,7 @@ private fun SettingsScreen(
                         onClick = onPickBackground,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp),
-                    ) { Text("Wählen") }
+                    ) { Text("Pick") }
 
                     OutlinedButton(
                         onClick = onClearBackground,
@@ -249,13 +260,13 @@ private fun SettingsScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // Accept/Reject Icons
+        // Call Control Icons Section
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
         ) {
             Column(Modifier.padding(14.dp)) {
-                Text("Incoming-Buttons", style = MaterialTheme.typography.titleMedium)
+                Text("Incoming Call Buttons", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(12.dp))
 
                 Row(
@@ -263,14 +274,14 @@ private fun SettingsScreen(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     IconPicker(
-                        title = "Annehmen",
+                        title = "Accept",
                         uri = settings.acceptButtonUri,
                         onPick = onPickAccept,
                         onClear = onClearAccept,
                         modifier = Modifier.weight(1f),
                     )
                     IconPicker(
-                        title = "Ablehnen",
+                        title = "Reject",
                         uri = settings.rejectButtonUri,
                         onPick = onPickReject,
                         onClear = onClearReject,
@@ -286,10 +297,13 @@ private fun SettingsScreen(
             onClick = onClose,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
-        ) { Text("Schließen") }
+        ) { Text("Close") }
     }
 }
 
+/**
+ * Helper component for picking and previewing a custom icon.
+ */
 @Composable
 private fun IconPicker(
     title: String,
@@ -323,7 +337,7 @@ private fun IconPicker(
         Spacer(Modifier.height(10.dp))
 
         Button(onClick = onPick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-            Text("Wählen")
+            Text("Pick")
         }
 
         OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {

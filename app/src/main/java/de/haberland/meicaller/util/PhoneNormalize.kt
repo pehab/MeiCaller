@@ -1,13 +1,18 @@
 package de.haberland.meicaller.util
 
 /**
- * Simple DE-friendly normalization for comparing keys:
- * - keep digits (+ only at start)
- * - 00xx -> +xx
- * - 0xxxx -> +49xxxx (default)
- * - 49xxxx -> +49xxxx
+ * Provides simple phone number normalization, particularly optimized for German (DE) numbers.
+ * This function helps in creating consistent keys for comparisons or database lookups.
  *
- * This is not a full E.164 implementation, but solves +49 / 0 / 00 issues well.
+ * It handles:
+ * - Preservation of leading '+' for international format.
+ * - Conversion of '00' prefix to '+'.
+ * - Prefixing local numbers (starting with '0') with the default country code (e.g., +49).
+ * - Ensuring numbers starting with the country code are prefixed with '+'.
+ *
+ * @param raw The raw phone number string to normalize.
+ * @param defaultCountryCode The country code to use for local numbers (default is "49" for Germany).
+ * @return A normalized phone number string.
  */
 fun normalizeForCompare(
     raw: String,

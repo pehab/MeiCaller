@@ -68,9 +68,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Activity that displays a list of missed calls.
+ * It provides functionality to view missed calls and mark them as seen in the system call log.
+ */
 class MissedCallActivity : ComponentActivity() {
     private val requestCallLogPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* UI updates */ }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* UI updates automatically via produceState */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -97,12 +101,18 @@ class MissedCallActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Data class representing a single missed call entry.
+ */
 private data class MissedCallItem(
     val nameOrNumber: String,
     val number: String,
     val dateMillis: Long,
 )
 
+/**
+ * Main screen component for displaying missed calls.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MissedCallsScreen(
@@ -116,14 +126,15 @@ private fun MissedCallsScreen(
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) ==
             PackageManager.PERMISSION_GRANTED
 
-    // Optional (aber wichtig für „zurückschalten“)
+    // WRITE_CALL_LOG is used to clear the "missed call" status in the system
     val hasWriteCallLogPermission =
         ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALL_LOG) ==
             PackageManager.PERMISSION_GRANTED
 
     var refreshTick by remember { mutableIntStateOf(0) }
-    var didMarkSeen by remember { mutableStateOf(false) } // nur einmal automatisch
+    var didMarkSeen by remember { mutableStateOf(false) }
 
+    // Load missed calls asynchronously when permission is granted or refresh is triggered
     val missedCalls by produceState(
         initialValue = emptyList(),
         hasCallLogPermission,
@@ -132,13 +143,13 @@ private fun MissedCallsScreen(
         value = if (hasCallLogPermission) loadMissedCalls(context) else emptyList()
     }
 
-    // ✅ Sobald wir Missed Calls anzeigen konnten → als „gesehen“ markieren
+    // Automatically mark missed calls as "seen" when the screen is viewed
     LaunchedEffect(hasCallLogPermission, missedCalls) {
         if (!didMarkSeen && hasCallLogPermission && missedCalls.isNotEmpty()) {
-            // Wenn WRITE_CALL_LOG nicht granted ist, versuchen wir es trotzdem (bei Default Dialer klappt’s teils auch),
-            // aber wir crashen niemals.
             val changed = markAllMissedAsSeen(context)
-            if (changed) refreshTick++ // Liste/Badges aktualisieren
+            if (changed) {
+                refreshTick++ // Refresh UI to reflect "seen" status
+            }
         }
     }
 
@@ -151,6 +162,7 @@ private fun MissedCallsScreen(
                     IconButton(
                         onClick = {
                             scope.launch {
+                                // Try marking as seen one last time before exiting
                                 try {
                                     markAllMissedAsSeen(context)
                                 } catch (_: Throwable) {
@@ -221,6 +233,7 @@ private fun MissedCallsScreen(
                     MissedCallRow(
                         item = item,
                         onOpenDialerWithNumber = {
+                            // Opens the mini dialer to call back the number
                             val intent =
                                 Intent(context, MiniDialerActivity::class.java).apply {
                                     data = "tel:${item.number}".toUri()
@@ -235,6 +248,9 @@ private fun MissedCallsScreen(
     }
 }
 
+/**
+ * A row representing a single missed call.
+ */
 @Composable
 private fun MissedCallRow(
     item: MissedCallItem,
@@ -278,11 +294,14 @@ private fun MissedCallRow(
                 )
             }
 
-            Icon(Icons.Filled.Call, contentDescription = null)
+            Icon(Icons.Filled.Call, contentDescription = "Zurückrufen")
         }
     }
 }
 
+/**
+ * Loads recent missed calls from the system provider.
+ */
 private suspend fun loadMissedCalls(
     context: android.content.Context,
     limit: Int = 30,
@@ -328,10 +347,8 @@ private suspend fun loadMissedCalls(
     }
 
 /**
- * Markiert alle "neuen" verpassten Anrufe als "gesehen".
- * Rückgabewert: true, wenn Einträge geändert wurden.
- *
- * Hinweis: WRITE_CALL_LOG kann notwendig sein – wir werfen nie einen Crash nach oben.
+ * Marks all "new" missed calls as "seen/read" in the system call log.
+ * @return true if any entries were updated.
  */
 private suspend fun markAllMissedAsSeen(context: android.content.Context): Boolean =
     withContext(Dispatchers.IO) {
@@ -342,7 +359,6 @@ private suspend fun markAllMissedAsSeen(context: android.content.Context): Boole
             val args = arrayOf(CallLog.Calls.MISSED_TYPE.toString(), "1")
 
             cr.query(CallLog.Calls.CONTENT_URI, projection, where, args, null)?.use { c ->
-                // Cursor zählt alle Treffer; ist ok bei missed calls (meist wenige)
                 return c.count
             }
             return 0
@@ -352,6 +368,7 @@ private suspend fun markAllMissedAsSeen(context: android.content.Context): Boole
             val before = countNewMissed()
 
             val cr = context.contentResolver
+            // Mark as 'not new'
             val valuesNew = ContentValues().apply { put(CallLog.Calls.NEW, 0) }
             val updatedNew =
                 cr.update(
@@ -361,6 +378,7 @@ private suspend fun markAllMissedAsSeen(context: android.content.Context): Boole
                     arrayOf(CallLog.Calls.MISSED_TYPE.toString(), "1"),
                 )
 
+            // Mark as 'read'
             val valuesRead = ContentValues().apply { put("is_read", 1) }
             val updatedRead =
                 cr.update(
@@ -370,7 +388,7 @@ private suspend fun markAllMissedAsSeen(context: android.content.Context): Boole
                     arrayOf(CallLog.Calls.MISSED_TYPE.toString()),
                 )
 
-            // Wichtig: Provider-Notify (hilft auf manchen ROMs)
+            // Notify providers to update system badges/UI
             cr.notifyChange(CallLog.Calls.CONTENT_URI, null)
             cr.notifyChange("content://call_log/calls".toUri(), null)
             cr.notifyChange("content://call_log/calls/".toUri(), null)

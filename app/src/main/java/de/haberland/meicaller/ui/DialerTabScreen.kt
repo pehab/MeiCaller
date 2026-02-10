@@ -64,7 +64,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Dialer-Tab Screen: Header/Settings kommt aus MainActivity → hier nur Content.
+ * Screen displaying a dialer interface with a dial pad and search suggestions.
+ * It allows users to type a number or name and search through contacts and call logs.
+ * @param settings Current UI settings for colors and button images.
+ * @param initialNumber Optional initial phone number to populate the dialer.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +79,7 @@ fun DialerTabScreen(
     var number by remember { mutableStateOf(initialNumber) }
     var pendingCall by remember { mutableStateOf<String?>(null) }
 
+    // Permission request launchers
     val requestCallPermission =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             val n = pendingCall
@@ -88,6 +92,7 @@ fun DialerTabScreen(
     val requestContactsPermission =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { /* UI updates */ }
 
+    /** Initiates a call or requests permission if not already granted. */
     fun callOrAskPermission(n: String) {
         val clean = n.trim()
         if (clean.isEmpty()) return
@@ -112,6 +117,7 @@ fun DialerTabScreen(
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
             PackageManager.PERMISSION_GRANTED
 
+    // Dynamically load suggestions based on the current input and available permissions
     val suggestions by produceState(
         initialValue = emptyList(),
         number,
@@ -142,6 +148,7 @@ fun DialerTabScreen(
                 modifier = Modifier.weight(1f),
             )
 
+            // Show permission buttons if access is missing
             when {
                 !hasCallLogPermission ->
                     TextButton(onClick = { requestCallLogPermission.launch(Manifest.permission.READ_CALL_LOG) }) {
@@ -204,6 +211,9 @@ fun DialerTabScreen(
 
 private enum class SuggestionSource { RECENT, CONTACT }
 
+/**
+ * Data class for a single search suggestion result.
+ */
 private data class SuggestionItem(
     val title: String,
     val subtitle: String,
@@ -211,6 +221,9 @@ private data class SuggestionItem(
     val source: SuggestionSource,
 )
 
+/**
+ * Displays a list of suggested contacts or recent calls in a card.
+ */
 @Composable
 private fun SuggestionsCard(
     canReadCallLog: Boolean,
@@ -312,6 +325,9 @@ private fun SuggestionsCard(
     }
 }
 
+/**
+ * Specialized button to initiate a call, supporting a custom image.
+ */
 @Composable
 private fun CallButton(
     acceptImageUri: String?,
@@ -342,6 +358,9 @@ private fun CallButton(
     }
 }
 
+/**
+ * Standard dial pad UI component with numeric keys and backspace/clear buttons.
+ */
 @Composable
 private fun DialPad(
     onKey: (String) -> Unit,
@@ -399,6 +418,9 @@ private fun DialPad(
     }
 }
 
+/**
+ * Loads suggestions based on input query from contacts and call logs.
+ */
 private suspend fun loadSuggestions(
     context: Context,
     query: String,
@@ -422,6 +444,7 @@ private suspend fun loadSuggestions(
             .take(10)
     }
 
+/** Simplifies a number for comparison (digits and optional plus). */
 private fun normalizeNumberForCompare(n: String): String {
     val trimmed = n.trim()
     val hasPlus = trimmed.startsWith("+")
@@ -429,6 +452,7 @@ private fun normalizeNumberForCompare(n: String): String {
     return (if (hasPlus) "+" else "") + digits
 }
 
+/** Fetches recent calls from the call log provider. */
 private fun loadRecentCallsAsSuggestions(
     context: Context,
     limit: Int = 8,
@@ -468,6 +492,7 @@ private fun loadRecentCallsAsSuggestions(
     return results
 }
 
+/** Searches the call log for entries matching the query. */
 private fun searchCallLogAsSuggestions(
     context: Context,
     query: String,
@@ -511,6 +536,7 @@ private fun searchCallLogAsSuggestions(
     return results
 }
 
+/** Searches the system contacts for entries matching the query. */
 private fun searchContactsAsSuggestions(
     context: Context,
     query: String,
@@ -557,6 +583,9 @@ private fun searchContactsAsSuggestions(
     return results
 }
 
+/**
+ * Initiates a phone call or falls back to the system dialer if permissions are missing.
+ */
 private fun placeCall(
     context: Context,
     number: String,

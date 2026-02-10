@@ -42,11 +42,16 @@ import de.haberland.meicaller.ui.FavoritesTabScreen
 import de.haberland.meicaller.ui.SettingsActivity
 import de.haberland.meicaller.ui.theme.MeiCallerTheme
 
+/**
+ * Main activity of the application, serving as the entry point.
+ * It initializes the theme based on user settings and sets up the main navigation structure.
+ */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContent {
+            // Collect UI settings from DataStore to apply the theme dynamically
             val settings by UiSettingsStore.flow(this).collectAsState(initial = UiSettings())
 
             MeiCallerTheme(primaryHex = settings.primaryHex, accentHex = settings.accentHex) {
@@ -58,6 +63,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Represents the different tabs available in the main screen.
+ */
 private enum class TabItem(
     val label: String,
 ) {
@@ -67,6 +75,10 @@ private enum class TabItem(
     Contacts("Kontakte"),
 }
 
+/**
+ * Main UI component that manages the tab navigation and top app bar.
+ * @param settings Current UI settings for colors and other preferences.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainTabs(settings: UiSettings) {
@@ -80,7 +92,7 @@ private fun MainTabs(settings: UiSettings) {
                 CenterAlignedTopAppBar(
                     title = { Text("MeiCaller") },
                     actions = {
-                        // Optional: Settings immer erreichbar
+                        // Open the settings activity
                         IconButton(onClick = {
                             context.startActivity(Intent(context, SettingsActivity::class.java))
                         }) {
@@ -92,6 +104,7 @@ private fun MainTabs(settings: UiSettings) {
                     },
                 )
 
+                // Navigation bar using tabs
                 PrimaryTabRow(selectedTabIndex = tab.ordinal) {
                     Tab(
                         selected = tab == TabItem.Dialer,
@@ -114,7 +127,7 @@ private fun MainTabs(settings: UiSettings) {
                     Tab(
                         selected = tab == TabItem.Contacts,
                         onClick = {
-                            // System-Kontakte öffnen
+                            // Open system contacts application via intent
                             val i =
                                 Intent(Intent.ACTION_VIEW).apply {
                                     type = "vnd.android.cursor.dir/contact"
@@ -134,6 +147,7 @@ private fun MainTabs(settings: UiSettings) {
                     .padding(pad)
                     .fillMaxSize(),
         ) {
+            // Display the selected tab's content
             when (tab) {
                 TabItem.Dialer ->
                     DialerTabScreen(
@@ -142,7 +156,7 @@ private fun MainTabs(settings: UiSettings) {
                 TabItem.Favorites -> FavoritesTabScreen()
                 TabItem.CallLog -> CallLogTabScreen()
                 TabItem.Contacts -> {
-                    // Wird per Intent geöffnet; optionaler Hinweis
+                    // This tab triggers an external activity, showing a temporary message here
                     Text("Kontakte-App wird geöffnet…", modifier = Modifier.padding(16.dp))
                 }
             }

@@ -59,6 +59,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Data class representing a favorite contact.
+ */
 data class FavoriteContact(
     val contactId: Long,
     val name: String,
@@ -66,6 +69,10 @@ data class FavoriteContact(
     val photoUri: String?,
 )
 
+/**
+ * Screen displaying the user's favorite (starred) contacts.
+ * Allows users to quickly call favorites or assign custom background images to them.
+ */
 @Composable
 fun FavoritesTabScreen() {
     val context = LocalContext.current
@@ -75,11 +82,12 @@ fun FavoritesTabScreen() {
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
             PackageManager.PERMISSION_GRANTED
 
+    // Dynamically load favorite contacts from the system provider
     val favorites by produceState(initialValue = emptyList(), hasContacts) {
         value = if (hasContacts) loadFavorites(context) else emptyList()
     }
 
-    // Picker plumbing
+    // State and launcher for background image selection
     var pendingBgKey by remember { mutableStateOf<String?>(null) }
     val pickBg =
         androidx.activity.compose.rememberLauncherForActivityResult(
@@ -88,11 +96,13 @@ fun FavoritesTabScreen() {
             val key = pendingBgKey
             if (uri != null && !key.isNullOrBlank()) {
                 try {
+                    // Try to persist URI permission for long-term access
                     context.contentResolver.takePersistableUriPermission(
                         uri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION,
                     )
                 } catch (_: Throwable) {
+                    // Persistence might not be supported; image might fail to load after restart.
                 }
 
                 scope.launch {
@@ -160,6 +170,10 @@ fun FavoritesTabScreen() {
     }
 }
 
+/**
+ * A single row representing a favorite contact.
+ * Displays contact photo/initial, name, and quick actions.
+ */
 @Composable
 private fun FavoriteRow(
     item: FavoriteContact,
@@ -215,7 +229,7 @@ private fun FavoriteRow(
                 )
             }
 
-            // 🎨 Set / Clear background
+            // 🎨 Quick actions for background management
             IconButton(onClick = onSetBackground) {
                 Icon(Icons.Filled.Image, contentDescription = "Hintergrund setzen")
             }
@@ -232,6 +246,9 @@ private fun FavoriteRow(
     }
 }
 
+/**
+ * Fetches starred contacts that have phone numbers from the system's contact provider.
+ */
 private suspend fun loadFavorites(context: Context): List<FavoriteContact> =
     withContext(Dispatchers.IO) {
         val out = mutableListOf<FavoriteContact>()
@@ -273,6 +290,9 @@ private suspend fun loadFavorites(context: Context): List<FavoriteContact> =
         out
     }
 
+/**
+ * Helper to fetch the primary phone number for a given contact ID.
+ */
 private fun firstPhoneNumberForContact(
     context: Context,
     contactId: Long,
@@ -295,6 +315,9 @@ private fun firstPhoneNumberForContact(
     return null
 }
 
+/**
+ * Initiates a phone call or falls back to the dialer if permission is missing.
+ */
 private fun placeCall(
     context: Context,
     number: String,
