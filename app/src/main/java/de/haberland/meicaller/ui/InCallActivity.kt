@@ -31,10 +31,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import de.haberland.meicaller.data.ContactBackgroundStore
 import de.haberland.meicaller.data.UiSettings
 import de.haberland.meicaller.data.UiSettingsStore
 import de.haberland.meicaller.telephony.CallRepo
 import de.haberland.meicaller.ui.theme.MeiCallerTheme
+import de.haberland.meicaller.util.normalizeForCompare
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -68,15 +70,35 @@ private fun InCallRoot(
     settings: UiSettings,
     onFinish: () -> Unit
 ) {
+    val context = LocalContext.current
+
+    // Nummer wird von InCallScreen hochgereicht, damit wir den Kontakt-Hintergrund laden können
+    var liveNumber by remember { mutableStateOf<String?>(null) }
+    val normalized = remember(liveNumber) {
+        liveNumber?.takeIf { it.isNotBlank() }?.let { normalizeForCompare(it) }.orEmpty()
+    }
+
+    val contactBgUri by if (normalized.isNotBlank()) {
+        ContactBackgroundStore.backgroundUriFlow(context, normalized).collectAsState(initial = null)
+    } else {
+        remember { mutableStateOf<String?>(null) }
+    }
+
+    // Priorität: KontaktBG > global BG
+    val effectiveBg = remember(contactBgUri, settings.backgroundUri) {
+        contactBgUri?.takeIf { !it.isNullOrBlank() } ?: settings.backgroundUri
+    }
+
     Box(Modifier.fillMaxSize()) {
 
-        if (!settings.backgroundUri.isNullOrBlank()) {
+        if (!effectiveBg.isNullOrBlank()) {
             AsyncImage(
-                model = settings.backgroundUri,
+                model = effectiveBg,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
+            // Abdunklung für Lesbarkeit
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background.copy(alpha = 0.55f)
@@ -87,6 +109,7 @@ private fun InCallRoot(
             acceptUri = settings.acceptButtonUri,
             rejectUri = settings.rejectButtonUri,
             onFinish = onFinish,
+            onNumberObserved = { n -> liveNumber = n },
             modifier = Modifier
                 .fillMaxSize()
                 .systemBarsPadding()
@@ -102,6 +125,7 @@ private fun InCallScreen(
     acceptUri: String?,
     rejectUri: String?,
     onFinish: () -> Unit,
+    onNumberObserved: (String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -151,6 +175,8 @@ private fun InCallScreen(
     suspend fun updateCallerInfoAsync() {
         val num = extractNumberFromCall()
         number = num
+        onNumberObserved(num) // ✅ wichtig: Root kann damit den Kontakt-Hintergrund laden
+
         systemName = extractSystemName()
 
         val canReadContacts =
@@ -605,7 +631,6 @@ private fun DtmfPad(
     }
 }
 
-/** Kontaktinfo wie im Dialer: Name + Foto + Label der passenden Nummer (Mobil/Privat/Arbeit) */
 private data class ContactInfo(
     val name: String?,
     val photoUri: String?,
@@ -619,7 +644,6 @@ private suspend fun lookupContactInfoByNumber(context: Context, rawNumber: Strin
             Uri.encode(rawNumber)
         )
 
-        // 1) PhoneLookup -> contactId + name + photo
         val lookupProjection = arrayOf(
             ContactsContract.PhoneLookup._ID,
             ContactsContract.PhoneLookup.DISPLAY_NAME,
@@ -641,7 +665,6 @@ private suspend fun lookupContactInfoByNumber(context: Context, rawNumber: Strin
             }
         }
 
-        // 2) Passende Nummer im Kontakt suchen und deren TYPE/LABEL nehmen
         var label: String? = null
         if (contactId != null) {
             val phoneProjection = arrayOf(
@@ -682,7 +705,6 @@ private suspend fun lookupContactInfoByNumber(context: Context, rawNumber: Strin
                 }
             }
 
-            // Wenn kein Match (z.B. weil Nummern extrem unterschiedlich formatiert), nimm wenigstens eine sinnvolle
             if (label.isNullOrBlank()) label = fallbackLabel
         }
 
@@ -690,60 +712,37 @@ private suspend fun lookupContactInfoByNumber(context: Context, rawNumber: Strin
     }
 }
 
-/**
- * Baut Vergleichsvarianten einer Nummer:
- * - nur Ziffern (ohne +)
- * - E164-nahe Variante für DE (+49 / 0049 / 0…)
- * - lokale Variante ohne Landesvorwahl
- *
- * Ziel: 0176… soll +49176… matchen etc.
- */
 private fun buildCompareCandidates(raw: String): Set<String> {
     val trimmed = raw.trim()
     if (trimmed.isEmpty()) return emptySet()
 
-    // normalisierte "digits only"
     val digitsOnly = trimmed.filter { it.isDigit() }
-
-    // plus/e164-artig erkennen
-    val hasPlus = trimmed.trimStart().startsWith("+")
-    val starts00 = trimmed.trimStart().startsWith("00")
-
     val candidates = linkedSetOf<String>()
 
-    // Grundkandidat: digits only
     if (digitsOnly.isNotBlank()) candidates.add(digitsOnly)
 
-    // Wenn + oder 00 vorhanden, versuchen wir Landesvorwahl abzuleiten
-    // z.B. +49176... -> digitsOnly "49176..."
-    // z.B. 0049176... -> digitsOnly "49176..."
-    val e164Digits = when {
-        hasPlus -> digitsOnly
-        starts00 && digitsOnly.length > 2 -> digitsOnly.drop(2) // 00 + CC...
-        else -> null
-    }
-    if (!e164Digits.isNullOrBlank()) {
-        candidates.add(e164Digits)
-        // lokale Variante ohne DE-CC (49)
-        if (e164Digits.startsWith("49") && e164Digits.length > 2) {
-            candidates.add("0" + e164Digits.drop(2)) // 0176... als Vergleich
-            candidates.add(e164Digits.drop(2))       // 176...
+    // Zusätzlich: Kandidaten via normalizeForCompare (aus util) -> liefert meist +49...
+    val norm = normalizeForCompare(trimmed)
+    if (norm.isNotBlank()) {
+        val normDigits = norm.filter { it.isDigit() }
+        if (normDigits.isNotBlank()) candidates.add(normDigits)
+
+        // lokale Kandidaten für DE
+        if (normDigits.startsWith("49") && normDigits.length > 2) {
+            candidates.add("0" + normDigits.drop(2))
+            candidates.add(normDigits.drop(2))
         }
     }
 
-    // Wenn es lokal aussieht (0...) und DE wahrscheinlich:
-    // 0176... -> 49176... (E164 digits ohne +)
+    // lokale Kandidaten
     if (digitsOnly.startsWith("0") && digitsOnly.length >= 6) {
         val noTrunk = digitsOnly.drop(1)
-        candidates.add(noTrunk) // 176...
-        candidates.add("49$noTrunk") // 49176...
+        candidates.add(noTrunk)
+        candidates.add("49$noTrunk")
     }
 
-    // Einige speichern "176..." ohne führende 0
-    // -> ergänze 0 + number
     if (!digitsOnly.startsWith("0") && digitsOnly.length in 6..15) {
         candidates.add("0$digitsOnly")
-        // und DE-CC falls plausibel
         candidates.add("49$digitsOnly")
     }
 

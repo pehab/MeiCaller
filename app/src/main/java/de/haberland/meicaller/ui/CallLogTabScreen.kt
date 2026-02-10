@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.CallLog
 import android.telecom.TelecomManager
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +19,8 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallMade
 import androidx.compose.material.icons.filled.CallMissed
 import androidx.compose.material.icons.filled.CallReceived
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,8 +32,11 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import de.haberland.meicaller.data.ContactBackgroundStore
 import de.haberland.meicaller.data.UiSettings
+import de.haberland.meicaller.util.normalizeForCompare
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -46,6 +52,7 @@ data class CallLogItem(
 @Composable
 fun CallLogTabScreen(settings: UiSettings) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val hasCallLog =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) ==
@@ -57,7 +64,34 @@ fun CallLogTabScreen(settings: UiSettings) {
         value = if (hasCallLog) loadCallLog(context, limit = 120) else emptyList()
     }
 
-    Column(Modifier.fillMaxSize().padding(14.dp)) {
+    // Picker plumbing (OpenDocument -> persistable)
+    var pendingBgKey by remember { mutableStateOf<String?>(null) }
+    val pickBg = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        val key = pendingBgKey
+        pendingBgKey = null
+        if (uri != null && !key.isNullOrBlank()) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Throwable) {
+                // Some providers don't support persistable permission; still store the uri.
+            }
+
+            scope.launch {
+                ContactBackgroundStore.setBackground(context, key, uri)
+            }
+        }
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(14.dp)
+    ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Anrufliste", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             IconButton(onClick = { refresh++ }) {
@@ -86,11 +120,26 @@ fun CallLogTabScreen(settings: UiSettings) {
             return
         }
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
             items(calls) { item ->
+                val normalized = remember(item.number) { normalizeForCompare(item.number) }
+                val bgUri by ContactBackgroundStore.backgroundUriFlow(context, normalized)
+                    .collectAsState(initial = null)
+
                 CallLogRow(
                     item = item,
-                    onCall = { placeCall(context, item.number) }
+                    hasCustomBackground = !bgUri.isNullOrBlank(),
+                    onCall = { placeCall(context, item.number) },
+                    onSetBackground = {
+                        pendingBgKey = normalized
+                        pickBg.launch(arrayOf("image/*"))
+                    },
+                    onClearBackground = {
+                        scope.launch { ContactBackgroundStore.clearBackground(context, normalized) }
+                    }
                 )
             }
         }
@@ -100,7 +149,10 @@ fun CallLogTabScreen(settings: UiSettings) {
 @Composable
 private fun CallLogRow(
     item: CallLogItem,
-    onCall: () -> Unit
+    hasCustomBackground: Boolean,
+    onCall: () -> Unit,
+    onSetBackground: () -> Unit,
+    onClearBackground: () -> Unit
 ) {
     val df = remember { SimpleDateFormat("dd.MM. HH:mm", Locale.getDefault()) }
     val dateText = remember(item.dateMillis) { df.format(Date(item.dateMillis)) }
@@ -121,10 +173,12 @@ private fun CallLogRow(
         colors = CardDefaults.cardColors(containerColor = containerColor),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCall() }   // ✅ Row = direkt anrufen
+            .clickable { onCall() }
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(12.dp),
+            Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
@@ -149,51 +203,67 @@ private fun CallLogRow(
                 )
             }
 
-            IconButton(onClick = onCall) { // ✅ Icon = auch anrufen
+            // 🎨 Set / Clear background
+            IconButton(onClick = onSetBackground) {
+                Icon(
+                    Icons.Filled.Image,
+                    contentDescription = "Hintergrund setzen"
+                )
+            }
+            if (hasCustomBackground) {
+                IconButton(onClick = onClearBackground) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = "Hintergrund entfernen"
+                    )
+                }
+            }
+
+            IconButton(onClick = onCall) {
                 Icon(Icons.Filled.Call, contentDescription = "Anrufen")
             }
         }
     }
 }
 
+private suspend fun loadCallLog(context: Context, limit: Int): List<CallLogItem> =
+    withContext(Dispatchers.IO) {
+        val out = mutableListOf<CallLogItem>()
+        val cr = context.contentResolver
 
-private suspend fun loadCallLog(context: Context, limit: Int): List<CallLogItem> = withContext(Dispatchers.IO) {
-    val out = mutableListOf<CallLogItem>()
-    val cr = context.contentResolver
+        val projection = arrayOf(
+            CallLog.Calls.CACHED_NAME,
+            CallLog.Calls.NUMBER,
+            CallLog.Calls.DATE,
+            CallLog.Calls.TYPE
+        )
 
-    val projection = arrayOf(
-        CallLog.Calls.CACHED_NAME,
-        CallLog.Calls.NUMBER,
-        CallLog.Calls.DATE,
-        CallLog.Calls.TYPE
-    )
+        cr.query(
+            CallLog.Calls.CONTENT_URI,
+            projection,
+            null,
+            null,
+            "${CallLog.Calls.DATE} DESC"
+        )?.use { c ->
+            while (c.moveToNext() && out.size < limit) {
+                val cachedName = c.getString(0)
+                val number = c.getString(1) ?: continue
+                val date = c.getLong(2)
+                val type = c.getInt(3)
 
-    cr.query(
-        CallLog.Calls.CONTENT_URI,
-        projection,
-        null,
-        null,
-        "${CallLog.Calls.DATE} DESC"
-    )?.use { c ->
-        while (c.moveToNext() && out.size < limit) {
-            val cachedName = c.getString(0)
-            val number = c.getString(1) ?: continue
-            val date = c.getLong(2)
-            val type = c.getInt(3)
-
-            out.add(
-                CallLogItem(
-                    nameOrNumber = cachedName?.takeIf { it.isNotBlank() } ?: number,
-                    number = number,
-                    dateMillis = date,
-                    type = type
+                out.add(
+                    CallLogItem(
+                        nameOrNumber = cachedName?.takeIf { it.isNotBlank() } ?: number,
+                        number = number,
+                        dateMillis = date,
+                        type = type
+                    )
                 )
-            )
+            }
         }
-    }
 
-    out
-}
+        out
+    }
 
 private fun placeCall(context: Context, number: String) {
     val clean = number.trim()

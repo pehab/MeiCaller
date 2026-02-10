@@ -1,14 +1,13 @@
 package de.haberland.meicaller.ui
 
 import android.Manifest
-import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.ContactsContract
 import android.telecom.TelecomManager
-import androidx.compose.foundation.Image
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,6 +16,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,8 +31,11 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import coil.compose.AsyncImage
+import de.haberland.meicaller.data.ContactBackgroundStore
 import de.haberland.meicaller.data.UiSettings
+import de.haberland.meicaller.util.normalizeForCompare
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class FavoriteContact(
@@ -44,6 +48,7 @@ data class FavoriteContact(
 @Composable
 fun FavoritesTabScreen(settings: UiSettings) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val hasContacts =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
@@ -53,7 +58,33 @@ fun FavoritesTabScreen(settings: UiSettings) {
         value = if (hasContacts) loadFavorites(context) else emptyList()
     }
 
-    Column(Modifier.fillMaxSize().padding(14.dp)) {
+    // Picker plumbing
+    var pendingBgKey by remember { mutableStateOf<String?>(null) }
+    val pickBg = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        val key = pendingBgKey
+        pendingBgKey = null
+        if (uri != null && !key.isNullOrBlank()) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Throwable) {
+            }
+
+            scope.launch {
+                ContactBackgroundStore.setBackground(context, key, uri)
+            }
+        }
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(14.dp)
+    ) {
         Text("Favoriten", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(10.dp))
 
@@ -72,17 +103,35 @@ fun FavoritesTabScreen(settings: UiSettings) {
             Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
                     Text("Keine Favoriten gefunden.")
-                    Text("Tipp: Markiere Kontakte in der Kontakte-App als Favorit ⭐", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "Tipp: Markiere Kontakte in der Kontakte-App als Favorit ⭐",
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
             return
         }
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
             items(favorites) { f ->
+                val normalized = remember(f.number) { normalizeForCompare(f.number) }
+                val bgUri by ContactBackgroundStore.backgroundUriFlow(context, normalized)
+                    .collectAsState(initial = null)
+
                 FavoriteRow(
                     item = f,
-                    onCall = { placeCall(context, f.number) }
+                    hasCustomBackground = !bgUri.isNullOrBlank(),
+                    onCall = { placeCall(context, f.number) },
+                    onSetBackground = {
+                        pendingBgKey = normalized
+                        pickBg.launch(arrayOf("image/*"))
+                    },
+                    onClearBackground = {
+                        scope.launch { ContactBackgroundStore.clearBackground(context, normalized) }
+                    }
                 )
             }
         }
@@ -92,7 +141,10 @@ fun FavoritesTabScreen(settings: UiSettings) {
 @Composable
 private fun FavoriteRow(
     item: FavoriteContact,
-    onCall: () -> Unit
+    hasCustomBackground: Boolean,
+    onCall: () -> Unit,
+    onSetBackground: () -> Unit,
+    onClearBackground: () -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(18.dp),
@@ -101,10 +153,11 @@ private fun FavoriteRow(
             .clickable { onCall() }
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(12.dp),
+            Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Kontaktbild (falls vorhanden)
             if (!item.photoUri.isNullOrBlank()) {
                 AsyncImage(
                     model = item.photoUri,
@@ -130,7 +183,22 @@ private fun FavoriteRow(
 
             Column(Modifier.weight(1f)) {
                 Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(item.number, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    item.number,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // 🎨 Set / Clear background
+            IconButton(onClick = onSetBackground) {
+                Icon(Icons.Filled.Image, contentDescription = "Hintergrund setzen")
+            }
+            if (hasCustomBackground) {
+                IconButton(onClick = onClearBackground) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Hintergrund entfernen")
+                }
             }
 
             IconButton(onClick = onCall) {
@@ -140,43 +208,44 @@ private fun FavoriteRow(
     }
 }
 
-private suspend fun loadFavorites(context: Context): List<FavoriteContact> = withContext(Dispatchers.IO) {
-    val out = mutableListOf<FavoriteContact>()
-    val cr = context.contentResolver
+private suspend fun loadFavorites(context: Context): List<FavoriteContact> =
+    withContext(Dispatchers.IO) {
+        val out = mutableListOf<FavoriteContact>()
+        val cr = context.contentResolver
 
-    val projection = arrayOf(
-        ContactsContract.Contacts._ID,
-        ContactsContract.Contacts.DISPLAY_NAME,
-        ContactsContract.Contacts.PHOTO_URI
-    )
+        val projection = arrayOf(
+            ContactsContract.Contacts._ID,
+            ContactsContract.Contacts.DISPLAY_NAME,
+            ContactsContract.Contacts.PHOTO_URI
+        )
 
-    val sel = "${ContactsContract.Contacts.STARRED}=1 AND ${ContactsContract.Contacts.HAS_PHONE_NUMBER}=1"
-    cr.query(
-        ContactsContract.Contacts.CONTENT_URI,
-        projection,
-        sel,
-        null,
-        "${ContactsContract.Contacts.DISPLAY_NAME} COLLATE NOCASE ASC"
-    )?.use { c ->
-        while (c.moveToNext() && out.size < 200) {
-            val id = c.getLong(0)
-            val name = c.getString(1) ?: continue
-            val photoUri = c.getString(2)
+        val sel = "${ContactsContract.Contacts.STARRED}=1 AND ${ContactsContract.Contacts.HAS_PHONE_NUMBER}=1"
+        cr.query(
+            ContactsContract.Contacts.CONTENT_URI,
+            projection,
+            sel,
+            null,
+            "${ContactsContract.Contacts.DISPLAY_NAME} COLLATE NOCASE ASC"
+        )?.use { c ->
+            while (c.moveToNext() && out.size < 200) {
+                val id = c.getLong(0)
+                val name = c.getString(1) ?: continue
+                val photoUri = c.getString(2)
 
-            val number = firstPhoneNumberForContact(context, id) ?: continue
-            out.add(
-                FavoriteContact(
-                    contactId = id,
-                    name = name,
-                    number = number,
-                    photoUri = photoUri
+                val number = firstPhoneNumberForContact(context, id) ?: continue
+                out.add(
+                    FavoriteContact(
+                        contactId = id,
+                        name = name,
+                        number = number,
+                        photoUri = photoUri
+                    )
                 )
-            )
+            }
         }
-    }
 
-    out
-}
+        out
+    }
 
 private fun firstPhoneNumberForContact(context: Context, contactId: Long): String? {
     val cr = context.contentResolver
@@ -204,7 +273,6 @@ private fun placeCall(context: Context, number: String) {
     val telecom = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
     try {
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
-            // Kein CALL_PHONE: fallback auf DIAL
             context.startActivity(Intent(Intent.ACTION_DIAL, uri))
             return
         }
