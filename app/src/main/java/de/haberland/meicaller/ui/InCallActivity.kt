@@ -223,7 +223,7 @@ private fun InCallScreen(
 
         val canReadContacts =
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
-                    PackageManager.PERMISSION_GRANTED
+                PackageManager.PERMISSION_GRANTED
 
         if (!systemName.isNullOrBlank()) {
             displayName = systemName
@@ -261,7 +261,10 @@ private fun InCallScreen(
     DisposableEffect(call) {
         val callback =
             object : Call.Callback() {
-                override fun onStateChanged(call: Call, ignored: Int) {
+                override fun onStateChanged(
+                    call: Call,
+                    ignored: Int,
+                ) {
                     // use non-deprecated source of truth
                     callState = call.details?.state ?: callState
                 }
@@ -289,13 +292,13 @@ private fun InCallScreen(
 
     val isActiveLike =
         callState == Call.STATE_ACTIVE ||
-                callState == Call.STATE_DIALING ||
-                callState == Call.STATE_CONNECTING ||
-                callState == Call.STATE_HOLDING
+            callState == Call.STATE_DIALING ||
+            callState == Call.STATE_CONNECTING ||
+            callState == Call.STATE_HOLDING
 
     if (showDtmf && isActiveLike) {
         ModalBottomSheet(
-            onDismissRequest = { showDtmf = false },
+            onDismissRequest = { },
             containerColor = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
         ) {
@@ -362,7 +365,7 @@ private fun InCallScreen(
                     onToggleSpeaker = {
                         CallRepo.toggleSpeaker(context, service)
                     },
-                    onShowDialpad = { showDtmf = true },
+                    onShowDialpad = { },
                     onHangup = {
                         call.disconnect()
                         onFinish()
@@ -508,8 +511,11 @@ private fun ActiveControlsBottom(
                 checked = isSpeaker,
                 onClick = onToggleSpeaker,
                 icon =
-                    if (isSpeaker) Icons.AutoMirrored.Filled.VolumeUp
-                    else Icons.AutoMirrored.Filled.VolumeOff,
+                    if (isSpeaker) {
+                        Icons.AutoMirrored.Filled.VolumeUp
+                    } else {
+                        Icons.AutoMirrored.Filled.VolumeOff
+                    },
                 modifier = Modifier.weight(1f),
             )
         }

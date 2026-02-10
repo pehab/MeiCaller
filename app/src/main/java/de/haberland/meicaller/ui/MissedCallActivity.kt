@@ -138,7 +138,6 @@ private fun MissedCallsScreen(
             // Wenn WRITE_CALL_LOG nicht granted ist, versuchen wir es trotzdem (bei Default Dialer klappt’s teils auch),
             // aber wir crashen niemals.
             val changed = markAllMissedAsSeen(context)
-            didMarkSeen = true
             if (changed) refreshTick++ // Liste/Badges aktualisieren
         }
     }

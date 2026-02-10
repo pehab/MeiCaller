@@ -79,7 +79,6 @@ fun DialerTabScreen(
     val requestCallPermission =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             val n = pendingCall
-            pendingCall = null
             if (granted && n != null) placeCall(context, n)
         }
 

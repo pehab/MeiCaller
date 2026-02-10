@@ -44,7 +44,10 @@ class MyInCallService : InCallService() {
         // State-Callback: Klingeln stoppen sobald nicht mehr ringing
         call.registerCallback(
             object : Call.Callback() {
-                override fun onStateChanged(call: Call, state: Int) {
+                override fun onStateChanged(
+                    call: Call,
+                    state: Int,
+                ) {
                     if (state != Call.STATE_RINGING) stopRinging()
                 }
             },
@@ -89,7 +92,8 @@ class MyInCallService : InCallService() {
 
         try {
             rt.audioAttributes =
-                AudioAttributes.Builder()
+                AudioAttributes
+                    .Builder()
                     .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()

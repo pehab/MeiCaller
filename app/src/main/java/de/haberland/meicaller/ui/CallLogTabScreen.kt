@@ -94,7 +94,6 @@ fun CallLogTabScreen() {
             contract = ActivityResultContracts.OpenDocument(),
         ) { uri: Uri? ->
             val key = pendingBgKey
-            pendingBgKey = null
             if (uri != null && !key.isNullOrBlank()) {
                 try {
                     context.contentResolver.takePersistableUriPermission(

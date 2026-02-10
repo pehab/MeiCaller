@@ -16,20 +16,21 @@ import java.lang.ref.WeakReference
 
 object CallRepo {
     @Volatile private var callRef: WeakReference<Call>? = null
+
     @Volatile private var serviceRef: WeakReference<InCallService>? = null
 
     // ---- Public UI state ----
-    private val _isMuted = MutableStateFlow(false)
-    val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
+    private val mutableIsMuted = MutableStateFlow(false)
+    val isMuted: StateFlow<Boolean> = mutableIsMuted.asStateFlow()
 
-    private val _currentEndpoint = MutableStateFlow<CallEndpoint?>(null)
-    val currentEndpoint: StateFlow<CallEndpoint?> = _currentEndpoint.asStateFlow()
+    private val mutableCurrentEndpoint = MutableStateFlow<CallEndpoint?>(null)
+    val currentEndpoint: StateFlow<CallEndpoint?> = mutableCurrentEndpoint.asStateFlow()
 
-    private val _availableEndpoints = MutableStateFlow<List<CallEndpoint>>(emptyList())
+    private val mutableAvailableEndpoints = MutableStateFlow<List<CallEndpoint>>(emptyList())
 
     // Legacy fallback for < 34 (UI uses this only for "speaker?" boolean)
-    private val _legacyAudioRoute = MutableStateFlow(CallAudioState.ROUTE_EARPIECE)
-    val legacyAudioRoute: StateFlow<Int> = _legacyAudioRoute.asStateFlow()
+    private val mutableLegacyAudioRoute = MutableStateFlow(CallAudioState.ROUTE_EARPIECE)
+    val legacyAudioRoute: StateFlow<Int> = mutableLegacyAudioRoute.asStateFlow()
 
     // ---- Existing refs ----
     fun setService(service: InCallService) {
@@ -52,19 +53,20 @@ object CallRepo {
     }
 
     fun call(): Call? = callRef?.get()
+
     fun service(): InCallService? = serviceRef?.get()
 
     // ---- Service -> Repo updates (call these from MyInCallService overrides) ----
     fun onMuteStateChanged(isMuted: Boolean) {
-        _isMuted.value = isMuted
+        mutableIsMuted.value = isMuted
     }
 
     fun onCurrentEndpointChanged(endpoint: CallEndpoint?) {
-        _currentEndpoint.value = endpoint
+        mutableCurrentEndpoint.value = endpoint
     }
 
     fun onAvailableEndpointsChanged(endpoints: List<CallEndpoint>) {
-        _availableEndpoints.value = endpoints
+        mutableAvailableEndpoints.value = endpoints
     }
 
     /**
@@ -74,20 +76,23 @@ object CallRepo {
      */
     fun refreshFromService(service: InCallService) {
         if (Build.VERSION.SDK_INT >= 34) {
-            _currentEndpoint.value = service.currentCallEndpoint
+            mutableCurrentEndpoint.value = service.currentCallEndpoint
             // available endpoints come ONLY via onAvailableCallEndpointsChanged callback
         } else {
             @Suppress("DEPRECATION")
             val cas = service.callAudioState
-            _isMuted.value = cas?.isMuted == true
-            _legacyAudioRoute.value = cas?.route ?: CallAudioState.ROUTE_EARPIECE
+            mutableIsMuted.value = cas?.isMuted == true
+            mutableLegacyAudioRoute.value = cas?.route ?: CallAudioState.ROUTE_EARPIECE
         }
     }
 
     // ---- Commands used by UI ----
-    fun setMuted(service: InCallService, muted: Boolean) {
+    fun setMuted(
+        service: InCallService,
+        muted: Boolean,
+    ) {
         service.setMuted(muted)
-        _isMuted.value = muted
+        mutableIsMuted.value = muted
     }
 
     fun toggleSpeaker(
@@ -102,9 +107,12 @@ object CallRepo {
     }
 
     @androidx.annotation.RequiresApi(34)
-    private fun toggleSpeakerApi34(context: Context, service: InCallService) {
-        val current = _currentEndpoint.value ?: service.currentCallEndpoint
-        val available = _availableEndpoints.value
+    private fun toggleSpeakerApi34(
+        context: Context,
+        service: InCallService,
+    ) {
+        val current = mutableCurrentEndpoint.value ?: service.currentCallEndpoint
+        val available = mutableAvailableEndpoints.value
         if (available.isEmpty()) return
 
         val wantSpeaker = current.endpointType != CallEndpoint.TYPE_SPEAKER
@@ -129,7 +137,7 @@ object CallRepo {
     }
 
     private fun toggleSpeakerLegacy(service: InCallService) {
-        val current = _legacyAudioRoute.value
+        val current = mutableLegacyAudioRoute.value
         val newRoute =
             if (current == CallAudioState.ROUTE_SPEAKER) {
                 CallAudioState.ROUTE_EARPIECE
@@ -140,6 +148,6 @@ object CallRepo {
         @Suppress("DEPRECATION")
         service.setAudioRoute(newRoute)
 
-        _legacyAudioRoute.value = newRoute
+        mutableLegacyAudioRoute.value = newRoute
     }
 }
