@@ -4,24 +4,55 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.ContactsContract
 import android.telecom.Call
 import android.telecom.CallAudioState
+import android.telecom.CallEndpoint
 import android.telecom.VideoProfile
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,7 +74,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class InCallActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -55,7 +85,7 @@ class InCallActivity : ComponentActivity() {
 
             MeiCallerTheme(
                 primaryHex = settings.primaryHex,
-                accentHex = settings.accentHex
+                accentHex = settings.accentHex,
             ) {
                 Surface(Modifier.fillMaxSize()) {
                     InCallRoot(settings = settings, onFinish = { finishAndRemoveTask() })
@@ -68,40 +98,38 @@ class InCallActivity : ComponentActivity() {
 @Composable
 private fun InCallRoot(
     settings: UiSettings,
-    onFinish: () -> Unit
+    onFinish: () -> Unit,
 ) {
     val context = LocalContext.current
 
-    // Nummer wird von InCallScreen hochgereicht, damit wir den Kontakt-Hintergrund laden können
     var liveNumber by remember { mutableStateOf<String?>(null) }
-    val normalized = remember(liveNumber) {
-        liveNumber?.takeIf { it.isNotBlank() }?.let { normalizeForCompare(it) }.orEmpty()
-    }
+    val normalized =
+        remember(liveNumber) {
+            liveNumber?.takeIf { it.isNotBlank() }?.let { normalizeForCompare(it) }.orEmpty()
+        }
 
     val contactBgUri by if (normalized.isNotBlank()) {
         ContactBackgroundStore.backgroundUriFlow(context, normalized).collectAsState(initial = null)
     } else {
-        remember { mutableStateOf<String?>(null) }
+        remember { mutableStateOf(null) }
     }
 
-    // Priorität: KontaktBG > global BG
-    val effectiveBg = remember(contactBgUri, settings.backgroundUri) {
-        contactBgUri?.takeIf { !it.isNullOrBlank() } ?: settings.backgroundUri
-    }
+    val effectiveBg =
+        remember(contactBgUri, settings.backgroundUri) {
+            contactBgUri?.takeIf { it.isNotBlank() } ?: settings.backgroundUri
+        }
 
     Box(Modifier.fillMaxSize()) {
-
         if (!effectiveBg.isNullOrBlank()) {
             AsyncImage(
                 model = effectiveBg,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
             )
-            // Abdunklung für Lesbarkeit
             Surface(
                 modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background.copy(alpha = 0.55f)
+                color = MaterialTheme.colorScheme.background.copy(alpha = 0.55f),
             ) {}
         }
 
@@ -110,11 +138,12 @@ private fun InCallRoot(
             rejectUri = settings.rejectButtonUri,
             onFinish = onFinish,
             onNumberObserved = { n -> liveNumber = n },
-            modifier = Modifier
-                .fillMaxSize()
-                .systemBarsPadding()
-                .navigationBarsPadding()
-                .padding(16.dp)
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .systemBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(16.dp),
         )
     }
 }
@@ -126,11 +155,23 @@ private fun InCallScreen(
     rejectUri: String?,
     onFinish: () -> Unit,
     onNumberObserved: (String?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val call = remember { CallRepo.call() }
     val service = remember { CallRepo.service() }
+
+    // Audio state from repo (modern on 34+, legacy fallback below 34)
+    val isMuted by CallRepo.isMuted.collectAsState()
+    val currentEndpoint by CallRepo.currentEndpoint.collectAsState()
+    val legacyRoute by CallRepo.legacyAudioRoute.collectAsState()
+
+    val isSpeaker =
+        if (Build.VERSION.SDK_INT >= 34) {
+            currentEndpoint?.endpointType == CallEndpoint.TYPE_SPEAKER
+        } else {
+            legacyRoute == CallAudioState.ROUTE_SPEAKER
+        }
 
     if (call == null || service == null) {
         Column(modifier) {
@@ -141,9 +182,10 @@ private fun InCallScreen(
         return
     }
 
-    var callState by remember { mutableIntStateOf(call.state) }
-    var isMuted by remember { mutableStateOf(false) }
-    var audioRoute by remember { mutableIntStateOf(CallAudioState.ROUTE_EARPIECE) }
+    // Keep initial state without touching deprecated audio APIs
+    var callState by remember {
+        mutableIntStateOf(call.details?.state ?: Call.STATE_NEW)
+    }
 
     // Caller info
     var displayName by remember { mutableStateOf<String?>(null) }
@@ -152,7 +194,7 @@ private fun InCallScreen(
 
     // Contact bits
     var contactPhotoUri by remember { mutableStateOf<String?>(null) }
-    var contactLabel by remember { mutableStateOf<String?>(null) } // Mobil/Privat/Arbeit etc.
+    var contactLabel by remember { mutableStateOf<String?>(null) }
 
     // DTMF bottom sheet
     var showDtmf by remember { mutableStateOf(false) }
@@ -169,13 +211,13 @@ private fun InCallScreen(
 
     fun extractSystemName(): String? {
         val details = call.details
-        return details?.callerDisplayName?.toString()?.takeIf { it.isNotBlank() }
+        return details?.callerDisplayName?.takeIf { it.isNotBlank() }
     }
 
     suspend fun updateCallerInfoAsync() {
         val num = extractNumberFromCall()
         number = num
-        onNumberObserved(num) // ✅ wichtig: Root kann damit den Kontakt-Hintergrund laden
+        onNumberObserved(num)
 
         systemName = extractSystemName()
 
@@ -183,11 +225,8 @@ private fun InCallScreen(
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
                     PackageManager.PERMISSION_GRANTED
 
-        // Wenn System bereits einen Namen liefert, nehmen wir den sofort
         if (!systemName.isNullOrBlank()) {
             displayName = systemName
-
-            // trotzdem Foto/Label versuchen (über Nummer matchen)
             if (canReadContacts && !num.isNullOrBlank()) {
                 val info = lookupContactInfoByNumber(context, num)
                 contactPhotoUri = info.photoUri
@@ -199,7 +238,6 @@ private fun InCallScreen(
             return
         }
 
-        // Sonst: Lookup über Kontakte
         if (canReadContacts && !num.isNullOrBlank()) {
             val info = lookupContactInfoByNumber(context, num)
             displayName = info.name ?: num
@@ -212,25 +250,22 @@ private fun InCallScreen(
         }
     }
 
-    // audio state initial
-    LaunchedEffect(service) {
-        val cas = service.callAudioState
-        isMuted = cas?.isMuted == true
-        audioRoute = cas?.route ?: CallAudioState.ROUTE_EARPIECE
-    }
-
     // initial caller info
     LaunchedEffect(call) {
         updateCallerInfoAsync()
+        // refresh audio state (repo decides modern/legacy)
+        CallRepo.refreshFromService(service)
     }
 
     // state changes
     DisposableEffect(call) {
-        val callback = object : Call.Callback() {
-            override fun onStateChanged(call: Call, state: Int) {
-                callState = state
+        val callback =
+            object : Call.Callback() {
+                override fun onStateChanged(call: Call, ignored: Int) {
+                    // use non-deprecated source of truth
+                    callState = call.details?.state ?: callState
+                }
             }
-        }
         call.registerCallback(callback)
         onDispose { call.unregisterCallback(callback) }
     }
@@ -241,15 +276,16 @@ private fun InCallScreen(
         if (callState == Call.STATE_DISCONNECTED) onFinish()
     }
 
-    val statusText = when (callState) {
-        Call.STATE_RINGING -> "Eingehender Anruf"
-        Call.STATE_DIALING -> "Wähle…"
-        Call.STATE_CONNECTING -> "Verbinde…"
-        Call.STATE_ACTIVE -> "Im Gespräch"
-        Call.STATE_HOLDING -> "Gehalten"
-        Call.STATE_DISCONNECTED -> "Beendet"
-        else -> "Telefon"
-    }
+    val statusText =
+        when (callState) {
+            Call.STATE_RINGING -> "Eingehender Anruf"
+            Call.STATE_DIALING -> "Wähle…"
+            Call.STATE_CONNECTING -> "Verbinde…"
+            Call.STATE_ACTIVE -> "Im Gespräch"
+            Call.STATE_HOLDING -> "Gehalten"
+            Call.STATE_DISCONNECTED -> "Beendet"
+            else -> "Telefon"
+        }
 
     val isActiveLike =
         callState == Call.STATE_ACTIVE ||
@@ -257,32 +293,36 @@ private fun InCallScreen(
                 callState == Call.STATE_CONNECTING ||
                 callState == Call.STATE_HOLDING
 
-    // DTMF BottomSheet
     if (showDtmf && isActiveLike) {
         ModalBottomSheet(
             onDismissRequest = { showDtmf = false },
             containerColor = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp
+            tonalElevation = 6.dp,
         ) {
             DtmfPad(
                 onTone = { ch ->
-                    try { call.playDtmfTone(ch) } catch (_: Throwable) {}
+                    try {
+                        call.playDtmfTone(ch)
+                    } catch (_: Throwable) {
+                    }
                 },
                 onStop = {
-                    try { call.stopDtmfTone() } catch (_: Throwable) {}
+                    try {
+                        call.stopDtmfTone()
+                    } catch (_: Throwable) {
+                    }
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 10.dp)
-                    .navigationBarsPadding()
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 10.dp)
+                        .navigationBarsPadding(),
             )
             Spacer(Modifier.height(14.dp))
         }
     }
 
     Column(modifier = modifier) {
-
-        // TOP
         Column(Modifier.fillMaxWidth()) {
             Text(statusText, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(14.dp))
@@ -291,20 +331,22 @@ private fun InCallScreen(
                 name = displayName ?: (number ?: "Unbekannt"),
                 number = number,
                 photoUri = contactPhotoUri,
-                subtitle = contactLabel
+                subtitle = contactLabel,
             )
         }
 
         Spacer(Modifier.weight(1f))
 
-        // BOTTOM: Controls
         when {
             callState == Call.STATE_RINGING -> {
                 IncomingControlsBottom(
                     acceptUri = acceptUri,
                     rejectUri = rejectUri,
                     onAnswer = { call.answer(VideoProfile.STATE_AUDIO_ONLY) },
-                    onReject = { call.disconnect(); onFinish() }
+                    onReject = {
+                        call.disconnect()
+                        onFinish()
+                    },
                 )
             }
 
@@ -312,21 +354,19 @@ private fun InCallScreen(
                 ActiveControlsBottom(
                     rejectUri = rejectUri,
                     isMuted = isMuted,
-                    isSpeaker = audioRoute == CallAudioState.ROUTE_SPEAKER,
+                    isSpeaker = isSpeaker,
                     onToggleMute = {
                         val newVal = !isMuted
-                        service.setMuted(newVal)
-                        isMuted = newVal
+                        CallRepo.setMuted(service, newVal)
                     },
                     onToggleSpeaker = {
-                        val newRoute =
-                            if (audioRoute == CallAudioState.ROUTE_SPEAKER) CallAudioState.ROUTE_EARPIECE
-                            else CallAudioState.ROUTE_SPEAKER
-                        service.setAudioRoute(newRoute)
-                        audioRoute = newRoute
+                        CallRepo.toggleSpeaker(context, service)
                     },
                     onShowDialpad = { showDtmf = true },
-                    onHangup = { call.disconnect(); onFinish() }
+                    onHangup = {
+                        call.disconnect()
+                        onFinish()
+                    },
                 )
             }
 
@@ -334,7 +374,7 @@ private fun InCallScreen(
                 Button(
                     onClick = onFinish,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
                 ) { Text("Schließen") }
             }
         }
@@ -346,32 +386,33 @@ private fun CallerHeader(
     name: String,
     number: String?,
     photoUri: String?,
-    subtitle: String?
+    subtitle: String?,
 ) {
     Row(
         Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(
             modifier = Modifier.size(78.dp),
             shape = CircleShape,
             tonalElevation = 6.dp,
-            color = MaterialTheme.colorScheme.surfaceVariant
+            color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
             if (!photoUri.isNullOrBlank()) {
                 AsyncImage(
                     model = photoUri,
                     contentDescription = "Kontaktbild",
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape),
-                    contentScale = ContentScale.Crop
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape),
+                    contentScale = ContentScale.Crop,
                 )
             } else {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
                         text = name.take(1).uppercase(),
-                        style = MaterialTheme.typography.headlineMedium
+                        style = MaterialTheme.typography.headlineMedium,
                     )
                 }
             }
@@ -384,16 +425,17 @@ private fun CallerHeader(
                 text = name,
                 style = MaterialTheme.typography.headlineLarge,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
 
-            val sub = buildString {
-                if (!subtitle.isNullOrBlank()) append(subtitle)
-                if (!number.isNullOrBlank()) {
-                    if (isNotEmpty()) append(" · ")
-                    append(number)
-                }
-            }.ifBlank { "Unbekannt" }
+            val sub =
+                buildString {
+                    if (!subtitle.isNullOrBlank()) append(subtitle)
+                    if (!number.isNullOrBlank()) {
+                        if (isNotEmpty()) append(" · ")
+                        append(number)
+                    }
+                }.ifBlank { "Unbekannt" }
 
             Spacer(Modifier.height(4.dp))
             Text(
@@ -401,7 +443,7 @@ private fun CallerHeader(
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -412,12 +454,12 @@ private fun IncomingControlsBottom(
     acceptUri: String?,
     rejectUri: String?,
     onAnswer: () -> Unit,
-    onReject: () -> Unit
+    onReject: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(18.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         FlatRoundImageButton(
             label = "Ablehnen",
@@ -425,7 +467,7 @@ private fun IncomingControlsBottom(
             fallbackText = "❌",
             onClick = onReject,
             modifier = Modifier.weight(1f),
-            sizeDp = 112
+            sizeDp = 112,
         )
         FlatRoundImageButton(
             label = "Annehmen",
@@ -433,7 +475,7 @@ private fun IncomingControlsBottom(
             fallbackText = "✅",
             onClick = onAnswer,
             modifier = Modifier.weight(1f),
-            sizeDp = 112
+            sizeDp = 112,
         )
     }
 }
@@ -446,28 +488,29 @@ private fun ActiveControlsBottom(
     onToggleMute: () -> Unit,
     onToggleSpeaker: () -> Unit,
     onShowDialpad: () -> Unit,
-    onHangup: () -> Unit
+    onHangup: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth()) {
-
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             IconTogglePill(
                 label = if (isMuted) "Unmute" else "Mute",
                 checked = isMuted,
                 onClick = onToggleMute,
                 icon = if (isMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             )
 
             IconTogglePill(
                 label = if (isSpeaker) "Speaker aus" else "Speaker an",
                 checked = isSpeaker,
                 onClick = onToggleSpeaker,
-                icon = if (isSpeaker) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
-                modifier = Modifier.weight(1f)
+                icon =
+                    if (isSpeaker) Icons.AutoMirrored.Filled.VolumeUp
+                    else Icons.AutoMirrored.Filled.VolumeOff,
+                modifier = Modifier.weight(1f),
             )
         }
 
@@ -476,7 +519,7 @@ private fun ActiveControlsBottom(
         OutlinedButton(
             onClick = onShowDialpad,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(16.dp),
         ) {
             Text("Tastenfeld")
         }
@@ -484,10 +527,11 @@ private fun ActiveControlsBottom(
         Spacer(Modifier.height(14.dp))
 
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 6.dp),
-            contentAlignment = Alignment.Center
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
+            contentAlignment = Alignment.Center,
         ) {
             FlatRoundImageButton(
                 label = "Auflegen",
@@ -496,7 +540,7 @@ private fun ActiveControlsBottom(
                 onClick = onHangup,
                 modifier = Modifier,
                 sizeDp = 96,
-                showLabel = false
+                showLabel = false,
             )
         }
     }
@@ -508,22 +552,23 @@ private fun IconTogglePill(
     checked: Boolean,
     onClick: () -> Unit,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier
-            .height(56.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick),
+        modifier =
+            modifier
+                .height(56.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .clickable(onClick = onClick),
         tonalElevation = if (checked) 6.dp else 2.dp,
-        color = if (checked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+        color = if (checked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
     ) {
         Row(
             Modifier
                 .fillMaxSize()
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+            horizontalArrangement = Arrangement.Center,
         ) {
             Icon(icon, contentDescription = label)
             Spacer(Modifier.width(10.dp))
@@ -540,25 +585,25 @@ private fun FlatRoundImageButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     sizeDp: Int = 92,
-    showLabel: Boolean = true
+    showLabel: Boolean = true,
 ) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-
         Surface(
-            modifier = Modifier
-                .size(sizeDp.dp)
-                .clip(CircleShape)
-                .clickable(onClick = onClick),
+            modifier =
+                Modifier
+                    .size(sizeDp.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onClick),
             shape = CircleShape,
             tonalElevation = 6.dp,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
         ) {
             if (!imageUri.isNullOrBlank()) {
                 AsyncImage(
                     model = imageUri,
                     contentDescription = label,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
                 )
             } else {
                 Box(contentAlignment = Alignment.Center) {
@@ -578,7 +623,7 @@ private fun FlatRoundImageButton(
 private fun DtmfPad(
     onTone: (Char) -> Unit,
     onStop: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -594,26 +639,28 @@ private fun DtmfPad(
         Text("Tastenfeld", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(10.dp))
 
-        val rows = listOf(
-            listOf('1', '2', '3'),
-            listOf('4', '5', '6'),
-            listOf('7', '8', '9'),
-            listOf('*', '0', '#')
-        )
+        val rows =
+            listOf(
+                listOf('1', '2', '3'),
+                listOf('4', '5', '6'),
+                listOf('7', '8', '9'),
+                listOf('*', '0', '#'),
+            )
 
         rows.forEach { r ->
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 r.forEach { ch ->
                     OutlinedButton(
                         onClick = { press(ch) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(64.dp),
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .height(64.dp),
                         shape = RoundedCornerShape(22.dp),
-                        contentPadding = PaddingValues(0.dp)
+                        contentPadding = PaddingValues(0.dp),
                     ) {
                         Text(ch.toString(), style = MaterialTheme.typography.headlineSmall)
                     }
@@ -626,7 +673,7 @@ private fun DtmfPad(
         Text(
             "Tipp: Für IVR-Menüs einfach tippen (Ton wird kurz gesendet).",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -634,22 +681,27 @@ private fun DtmfPad(
 private data class ContactInfo(
     val name: String?,
     val photoUri: String?,
-    val label: String?
+    val label: String?,
 )
 
-private suspend fun lookupContactInfoByNumber(context: Context, rawNumber: String): ContactInfo {
-    return withContext(Dispatchers.IO) {
-        val lookupUri = Uri.withAppendedPath(
-            ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
-            Uri.encode(rawNumber)
-        )
+private suspend fun lookupContactInfoByNumber(
+    context: Context,
+    rawNumber: String,
+): ContactInfo =
+    withContext(Dispatchers.IO) {
+        val lookupUri =
+            Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                Uri.encode(rawNumber),
+            )
 
-        val lookupProjection = arrayOf(
-            ContactsContract.PhoneLookup._ID,
-            ContactsContract.PhoneLookup.DISPLAY_NAME,
-            ContactsContract.PhoneLookup.PHOTO_URI,
-            ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI
-        )
+        val lookupProjection =
+            arrayOf(
+                ContactsContract.PhoneLookup._ID,
+                ContactsContract.PhoneLookup.DISPLAY_NAME,
+                ContactsContract.PhoneLookup.PHOTO_URI,
+                ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI,
+            )
 
         var contactId: Long? = null
         var name: String? = null
@@ -667,11 +719,12 @@ private suspend fun lookupContactInfoByNumber(context: Context, rawNumber: Strin
 
         var label: String? = null
         if (contactId != null) {
-            val phoneProjection = arrayOf(
-                ContactsContract.CommonDataKinds.Phone.TYPE,
-                ContactsContract.CommonDataKinds.Phone.LABEL,
-                ContactsContract.CommonDataKinds.Phone.NUMBER
-            )
+            val phoneProjection =
+                arrayOf(
+                    ContactsContract.CommonDataKinds.Phone.TYPE,
+                    ContactsContract.CommonDataKinds.Phone.LABEL,
+                    ContactsContract.CommonDataKinds.Phone.NUMBER,
+                )
 
             val sel = "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID}=?"
             val args = arrayOf(contactId.toString())
@@ -680,37 +733,37 @@ private suspend fun lookupContactInfoByNumber(context: Context, rawNumber: Strin
 
             var fallbackLabel: String? = null
 
-            context.contentResolver.query(
-                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                phoneProjection,
-                sel,
-                args,
-                null
-            )?.use { c ->
-                while (c.moveToNext()) {
-                    val type = c.getInt(0)
-                    val custom = c.getString(1)
-                    val contactNum = c.getString(2)
+            context.contentResolver
+                .query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    phoneProjection,
+                    sel,
+                    args,
+                    null,
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        val type = c.getInt(0)
+                        val custom = c.getString(1)
+                        val contactNum = c.getString(2)
 
-                    val thisLabel = toHumanPhoneLabel(type, custom)
-                    if (fallbackLabel.isNullOrBlank()) fallbackLabel = thisLabel
+                        val thisLabel = toHumanPhoneLabel(type, custom)
+                        if (fallbackLabel.isNullOrBlank()) fallbackLabel = thisLabel
 
-                    if (!contactNum.isNullOrBlank()) {
-                        val contactCandidates = buildCompareCandidates(contactNum)
-                        if (callCandidates.any { it in contactCandidates }) {
-                            label = thisLabel
-                            break
+                        if (!contactNum.isNullOrBlank()) {
+                            val contactCandidates = buildCompareCandidates(contactNum)
+                            if (callCandidates.any { it in contactCandidates }) {
+                                label = thisLabel
+                                break
+                            }
                         }
                     }
                 }
-            }
 
             if (label.isNullOrBlank()) label = fallbackLabel
         }
 
         ContactInfo(name = name, photoUri = photo, label = label)
     }
-}
 
 private fun buildCompareCandidates(raw: String): Set<String> {
     val trimmed = raw.trim()
@@ -721,20 +774,17 @@ private fun buildCompareCandidates(raw: String): Set<String> {
 
     if (digitsOnly.isNotBlank()) candidates.add(digitsOnly)
 
-    // Zusätzlich: Kandidaten via normalizeForCompare (aus util) -> liefert meist +49...
     val norm = normalizeForCompare(trimmed)
     if (norm.isNotBlank()) {
         val normDigits = norm.filter { it.isDigit() }
         if (normDigits.isNotBlank()) candidates.add(normDigits)
 
-        // lokale Kandidaten für DE
         if (normDigits.startsWith("49") && normDigits.length > 2) {
             candidates.add("0" + normDigits.drop(2))
             candidates.add(normDigits.drop(2))
         }
     }
 
-    // lokale Kandidaten
     if (digitsOnly.startsWith("0") && digitsOnly.length >= 6) {
         val noTrunk = digitsOnly.drop(1)
         candidates.add(noTrunk)
@@ -749,8 +799,11 @@ private fun buildCompareCandidates(raw: String): Set<String> {
     return candidates
 }
 
-private fun toHumanPhoneLabel(type: Int, customLabel: String?): String? {
-    return when (type) {
+private fun toHumanPhoneLabel(
+    type: Int,
+    customLabel: String?,
+): String? =
+    when (type) {
         ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE -> "Mobil"
         ContactsContract.CommonDataKinds.Phone.TYPE_HOME -> "Privat"
         ContactsContract.CommonDataKinds.Phone.TYPE_WORK -> "Arbeit"
@@ -761,4 +814,3 @@ private fun toHumanPhoneLabel(type: Int, customLabel: String?): String? {
             customLabel?.takeIf { it.isNotBlank() } ?: "Custom"
         else -> null
     }
-}

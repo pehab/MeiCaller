@@ -6,11 +6,30 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -23,33 +42,41 @@ import de.haberland.meicaller.ui.theme.MeiCallerTheme
 import kotlinx.coroutines.launch
 
 class SettingsActivity : ComponentActivity() {
-
     private val pickBackground =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { persistAndSave(it) { u ->
-                lifecycleScope.launch { UiSettingsStore.setBackgroundUri(this@SettingsActivity, u) }
-            } }
+            uri?.let {
+                persistAndSave(it) { u ->
+                    lifecycleScope.launch { UiSettingsStore.setBackgroundUri(this@SettingsActivity, u) }
+                }
+            }
         }
 
     private val pickAccept =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { persistAndSave(it) { u ->
-                lifecycleScope.launch { UiSettingsStore.setAcceptButtonUri(this@SettingsActivity, u) }
-            } }
+            uri?.let {
+                persistAndSave(it) { u ->
+                    lifecycleScope.launch { UiSettingsStore.setAcceptButtonUri(this@SettingsActivity, u) }
+                }
+            }
         }
 
     private val pickReject =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { persistAndSave(it) { u ->
-                lifecycleScope.launch { UiSettingsStore.setRejectButtonUri(this@SettingsActivity, u) }
-            } }
+            uri?.let {
+                persistAndSave(it) { u ->
+                    lifecycleScope.launch { UiSettingsStore.setRejectButtonUri(this@SettingsActivity, u) }
+                }
+            }
         }
 
-    private fun persistAndSave(uri: Uri, save: (Uri) -> Unit) {
+    private fun persistAndSave(
+        uri: Uri,
+        save: (Uri) -> Unit,
+    ) {
         try {
             contentResolver.takePersistableUriPermission(
                 uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
             )
         } catch (_: Throwable) {
             // je nach Provider nicht möglich – dann evtl. nicht reboot-sicher
@@ -65,7 +92,7 @@ class SettingsActivity : ComponentActivity() {
 
             MeiCallerTheme(
                 primaryHex = settings.primaryHex,
-                accentHex = settings.accentHex
+                accentHex = settings.accentHex,
             ) {
                 Surface(Modifier.fillMaxSize()) {
                     SettingsScreen(
@@ -88,7 +115,7 @@ class SettingsActivity : ComponentActivity() {
                         onClearReject = {
                             lifecycleScope.launch { UiSettingsStore.setRejectButtonUri(this@SettingsActivity, null) }
                         },
-                        onClose = { finish() }
+                        onClose = { finish() },
                     )
                 }
             }
@@ -107,16 +134,17 @@ private fun SettingsScreen(
     onClearAccept: () -> Unit,
     onPickReject: () -> Unit,
     onClearReject: () -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
 ) {
     // lokale Edit-Felder (damit Live-Update nicht beim Tippen “springt”)
     var primary by remember(settings.primaryHex) { mutableStateOf(settings.primaryHex) }
     var accent by remember(settings.accentHex) { mutableStateOf(settings.accentHex) }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(16.dp),
     ) {
         Text("MeiCaller – Design", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(16.dp))
@@ -124,7 +152,7 @@ private fun SettingsScreen(
         // Farben
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
+            shape = RoundedCornerShape(18.dp),
         ) {
             Column(Modifier.padding(14.dp)) {
                 Text("Farben", style = MaterialTheme.typography.titleMedium)
@@ -135,13 +163,13 @@ private fun SettingsScreen(
                     onValueChange = { primary = it },
                     label = { Text("Primary (Hex, z.B. #00E5FF)") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = { onSavePrimary(primary.trim()) },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(14.dp),
                 ) {
                     Text("Primary speichern")
                 }
@@ -153,13 +181,13 @@ private fun SettingsScreen(
                     onValueChange = { accent = it },
                     label = { Text("Accent (Hex, z.B. #7C4DFF)") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = { onSaveAccent(accent.trim()) },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(14.dp),
                 ) {
                     Text("Accent speichern")
                 }
@@ -167,7 +195,7 @@ private fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Tipp: Hex kann #RRGGBB oder #AARRGGBB sein.",
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
@@ -177,7 +205,7 @@ private fun SettingsScreen(
         // Hintergrund
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
+            shape = RoundedCornerShape(18.dp),
         ) {
             Column(Modifier.padding(14.dp)) {
                 Text("Hintergrund", style = MaterialTheme.typography.titleMedium)
@@ -187,11 +215,12 @@ private fun SettingsScreen(
                     AsyncImage(
                         model = settings.backgroundUri,
                         contentDescription = "Background preview",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
-                            .clip(RoundedCornerShape(16.dp)),
-                        contentScale = ContentScale.Crop
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(140.dp)
+                                .clip(RoundedCornerShape(16.dp)),
+                        contentScale = ContentScale.Crop,
                     )
                     Spacer(Modifier.height(10.dp))
                 } else {
@@ -201,18 +230,18 @@ private fun SettingsScreen(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Button(
                         onClick = onPickBackground,
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp)
+                        shape = RoundedCornerShape(14.dp),
                     ) { Text("Wählen") }
 
                     OutlinedButton(
                         onClick = onClearBackground,
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp)
+                        shape = RoundedCornerShape(14.dp),
                     ) { Text("Reset") }
                 }
             }
@@ -223,7 +252,7 @@ private fun SettingsScreen(
         // Accept/Reject Icons
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
+            shape = RoundedCornerShape(18.dp),
         ) {
             Column(Modifier.padding(14.dp)) {
                 Text("Incoming-Buttons", style = MaterialTheme.typography.titleMedium)
@@ -231,21 +260,21 @@ private fun SettingsScreen(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     IconPicker(
                         title = "Annehmen",
                         uri = settings.acceptButtonUri,
                         onPick = onPickAccept,
                         onClear = onClearAccept,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                     IconPicker(
                         title = "Ablehnen",
                         uri = settings.rejectButtonUri,
                         onPick = onPickReject,
                         onClear = onClearReject,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -256,7 +285,7 @@ private fun SettingsScreen(
         Button(
             onClick = onClose,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp)
+            shape = RoundedCornerShape(14.dp),
         ) { Text("Schließen") }
     }
 }
@@ -267,7 +296,7 @@ private fun IconPicker(
     uri: String?,
     onPick: () -> Unit,
     onClear: () -> Unit,
-    modifier: Modifier
+    modifier: Modifier,
 ) {
     Column(modifier) {
         Text(title, style = MaterialTheme.typography.bodyMedium)
@@ -277,16 +306,17 @@ private fun IconPicker(
             AsyncImage(
                 model = uri,
                 contentDescription = "$title icon preview",
-                modifier = Modifier
-                    .size(92.dp)
-                    .clip(CircleShape),
-                contentScale = ContentScale.Crop
+                modifier =
+                    Modifier
+                        .size(92.dp)
+                        .clip(CircleShape),
+                contentScale = ContentScale.Crop,
             )
         } else {
             Surface(
                 modifier = Modifier.size(92.dp),
                 shape = CircleShape,
-                tonalElevation = 2.dp
+                tonalElevation = 2.dp,
             ) {}
         }
 

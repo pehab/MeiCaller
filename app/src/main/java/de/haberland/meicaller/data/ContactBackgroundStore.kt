@@ -11,23 +11,31 @@ import kotlinx.coroutines.flow.map
 private val Context.contactBgStore by preferencesDataStore(name = "contact_backgrounds")
 
 object ContactBackgroundStore {
+    private fun keyFor(normalizedNumber: String) = stringPreferencesKey("bg_$normalizedNumber")
 
-    private fun keyFor(normalizedNumber: String) =
-        stringPreferencesKey("bg_${normalizedNumber}")
-
-    fun backgroundUriFlow(context: Context, normalizedNumber: String): Flow<String?> =
+    fun backgroundUriFlow(
+        context: Context,
+        normalizedNumber: String,
+    ): Flow<String?> =
         context.contactBgStore.data.map { prefs ->
             prefs[keyFor(normalizedNumber)]
         }
 
-    suspend fun setBackground(context: Context, normalizedNumber: String, uri: Uri?) {
+    suspend fun setBackground(
+        context: Context,
+        normalizedNumber: String,
+        uri: Uri?,
+    ) {
         context.contactBgStore.edit { prefs ->
             val k = keyFor(normalizedNumber)
             if (uri == null) prefs.remove(k) else prefs[k] = uri.toString()
         }
     }
 
-    suspend fun clearBackground(context: Context, normalizedNumber: String) {
+    suspend fun clearBackground(
+        context: Context,
+        normalizedNumber: String,
+    ) {
         context.contactBgStore.edit { prefs ->
             prefs.remove(keyFor(normalizedNumber))
         }

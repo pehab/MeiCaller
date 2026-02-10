@@ -1,0 +1,32 @@
+build:
+  maxIssues: 999999
+
+config:
+  validation: true
+
+style:
+  active: true
+  WildcardImport:
+    active: true
+  MaxLineLength:
+    active: true
+    maxLineLength: 120
+
+complexity:
+  active: true
+  LongMethod:
+    active: true
+    threshold: 50
+  CyclomaticComplexMethod:
+    active: true
+    threshold: 15
+
+potential-bugs:
+  active: true
+
+naming:
+  active: true
+  FunctionNaming:
+    active: false
+  MatchingDeclarationName:
+    active: false

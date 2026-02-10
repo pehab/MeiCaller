@@ -12,11 +12,10 @@
         tools:ignore="SmsAndCallLogPolicy" />
     <uses-permission
         android:name="android.permission.WRITE_CALL_LOG"
-        tools:ignore="ProtectedPermissions" />
+        tools:ignore="ProtectedPermissions,SmsAndCallLogPolicy" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
-        android:allowBackup="true"
         android:label="MeiCaller"
         android:supportsRtl="true"
         android:theme="@style/Theme.MeiCaller"

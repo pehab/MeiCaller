@@ -2,4 +2,5 @@
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/meicaller_launcher_icon_background"/>
     <foreground android:drawable="@mipmap/meicaller_launcher_icon_foreground"/>
+    <monochrome android:drawable="@mipmap/meicaller_launcher_icon_foreground"/>
 </adaptive-icon>
