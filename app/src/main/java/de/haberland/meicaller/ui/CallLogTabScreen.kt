@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.CallLog
+import android.provider.ContactsContract
 import android.telecom.TelecomManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -71,12 +73,14 @@ import java.util.Locale
  * @property number The raw phone number.
  * @property dateMillis The timestamp of the call in milliseconds.
  * @property type The type of call (incoming, outgoing, missed, etc.).
+ * @property isContact True if the number is already known as a contact.
  */
 data class CallLogItem(
     val nameOrNumber: String,
     val number: String,
     val dateMillis: Long,
     val type: Int,
+    val isContact: Boolean,
 )
 
 /**
@@ -101,7 +105,7 @@ fun CallLogTabScreen() {
 
     // State for the number currently being edited for a custom background
     var pendingBgKey by remember { mutableStateOf<String?>(null) }
-    
+
     // File picker launcher for selecting background images
     val pickBg =
         androidx.activity.compose.rememberLauncherForActivityResult(
@@ -172,6 +176,7 @@ fun CallLogTabScreen() {
                     item = item,
                     hasCustomBackground = !bgUri.isNullOrBlank(),
                     onCall = { placeCall(context, item.number) },
+                    onAddContact = { addToContacts(context, item.number) },
                     onSetBackground = {
                         pendingBgKey = normalized
                         pickBg.launch(arrayOf("image/*"))
@@ -194,6 +199,7 @@ private fun CallLogRow(
     item: CallLogItem,
     hasCustomBackground: Boolean,
     onCall: () -> Unit,
+    onAddContact: () -> Unit,
     onSetBackground: () -> Unit,
     onClearBackground: () -> Unit,
 ) {
@@ -249,6 +255,16 @@ private fun CallLogRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+
+            // ➕ Add Contact if not present
+            if (!item.isContact) {
+                IconButton(onClick = onAddContact) {
+                    Icon(
+                        Icons.Filled.PersonAdd,
+                        contentDescription = "Kontakt hinzufügen",
+                    )
+                }
             }
 
             // 🎨 Set / Clear background
@@ -308,12 +324,15 @@ private suspend fun loadCallLog(
                     val date = c.getLong(2)
                     val type = c.getInt(3)
 
+                    val hasName = !cachedName.isNullOrBlank()
+
                     out.add(
                         CallLogItem(
-                            nameOrNumber = cachedName?.takeIf { it.isNotBlank() } ?: number,
+                            nameOrNumber = if (hasName) cachedName else number,
                             number = number,
                             dateMillis = date,
                             type = type,
+                            isContact = hasName,
                         ),
                     )
                 }
@@ -344,4 +363,19 @@ private fun placeCall(
     } catch (_: Throwable) {
         context.startActivity(Intent(Intent.ACTION_DIAL, uri))
     }
+}
+
+/**
+ * Opens the system "Add Contact" screen for a given number.
+ */
+private fun addToContacts(
+    context: Context,
+    number: String,
+) {
+    val intent =
+        Intent(Intent.ACTION_INSERT).apply {
+            type = ContactsContract.RawContacts.CONTENT_TYPE
+            putExtra(ContactsContract.Intents.Insert.PHONE, number)
+        }
+    context.startActivity(intent)
 }

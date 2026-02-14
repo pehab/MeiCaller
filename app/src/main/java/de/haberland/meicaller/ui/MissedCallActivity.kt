@@ -2,10 +2,12 @@ package de.haberland.meicaller.ui
 
 import android.Manifest
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.CallLog
+import android.provider.ContactsContract
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -108,6 +111,7 @@ private data class MissedCallItem(
     val nameOrNumber: String,
     val number: String,
     val dateMillis: Long,
+    val isContact: Boolean,
 )
 
 /**
@@ -241,6 +245,7 @@ private fun MissedCallsScreen(
                                 }
                             context.startActivity(intent)
                         },
+                        onAddContact = { addToContacts(context, item.number) },
                     )
                 }
             }
@@ -255,6 +260,7 @@ private fun MissedCallsScreen(
 private fun MissedCallRow(
     item: MissedCallItem,
     onOpenDialerWithNumber: () -> Unit,
+    onAddContact: () -> Unit,
 ) {
     val df = remember { SimpleDateFormat("dd.MM. HH:mm", Locale.getDefault()) }
     val dateText = remember(item.dateMillis) { df.format(Date(item.dateMillis)) }
@@ -294,7 +300,15 @@ private fun MissedCallRow(
                 )
             }
 
-            Icon(Icons.Filled.Call, contentDescription = "Zurückrufen")
+            if (!item.isContact) {
+                IconButton(onClick = onAddContact) {
+                    Icon(Icons.Filled.PersonAdd, contentDescription = "Kontakt hinzufügen")
+                }
+            }
+
+            IconButton(onClick = onOpenDialerWithNumber) {
+                Icon(Icons.Filled.Call, contentDescription = "Zurückrufen")
+            }
         }
     }
 }
@@ -303,7 +317,7 @@ private fun MissedCallRow(
  * Loads recent missed calls from the system provider.
  */
 private suspend fun loadMissedCalls(
-    context: android.content.Context,
+    context: Context,
     limit: Int = 30,
 ): List<MissedCallItem> =
     withContext(Dispatchers.IO) {
@@ -334,11 +348,14 @@ private suspend fun loadMissedCalls(
                     val number = c.getString(1) ?: continue
                     val date = c.getLong(2)
 
+                    val hasName = !cachedName.isNullOrBlank()
+
                     out.add(
                         MissedCallItem(
-                            nameOrNumber = cachedName?.takeIf { it.isNotBlank() } ?: number,
+                            nameOrNumber = if (hasName) cachedName else number,
                             number = number,
                             dateMillis = date,
+                            isContact = hasName,
                         ),
                     )
                 }
@@ -347,10 +364,25 @@ private suspend fun loadMissedCalls(
     }
 
 /**
+ * Opens the system "Add Contact" screen for a given number.
+ */
+private fun addToContacts(
+    context: Context,
+    number: String,
+) {
+    val intent =
+        Intent(Intent.ACTION_INSERT).apply {
+            type = ContactsContract.RawContacts.CONTENT_TYPE
+            putExtra(ContactsContract.Intents.Insert.PHONE, number)
+        }
+    context.startActivity(intent)
+}
+
+/**
  * Marks all "new" missed calls as "seen/read" in the system call log.
  * @return true if any entries were updated.
  */
-private suspend fun markAllMissedAsSeen(context: android.content.Context): Boolean =
+private suspend fun markAllMissedAsSeen(context: Context): Boolean =
     withContext(Dispatchers.IO) {
         fun countNewMissed(): Int {
             val cr = context.contentResolver
