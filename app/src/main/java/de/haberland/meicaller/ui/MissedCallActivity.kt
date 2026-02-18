@@ -64,6 +64,7 @@ import androidx.core.net.toUri
 import de.haberland.meicaller.data.UiSettings
 import de.haberland.meicaller.data.UiSettingsStore
 import de.haberland.meicaller.ui.theme.MeiCallerTheme
+import de.haberland.meicaller.util.getContactName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -129,6 +130,9 @@ private fun MissedCallsScreen(
     val hasCallLogPermission =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) ==
             PackageManager.PERMISSION_GRANTED
+    val hasContactsPermission =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
+            PackageManager.PERMISSION_GRANTED
 
     // WRITE_CALL_LOG is used to clear the "missed call" status in the system
     val hasWriteCallLogPermission =
@@ -142,6 +146,7 @@ private fun MissedCallsScreen(
     val missedCalls by produceState(
         initialValue = emptyList(),
         hasCallLogPermission,
+        hasContactsPermission,
         refreshTick,
     ) {
         value = if (hasCallLogPermission) loadMissedCalls(context) else emptyList()
@@ -324,6 +329,10 @@ private suspend fun loadMissedCalls(
         val out = mutableListOf<MissedCallItem>()
         val cr = context.contentResolver
 
+        val hasReadContacts =
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
+                PackageManager.PERMISSION_GRANTED
+
         val projection =
             arrayOf(
                 CallLog.Calls.CACHED_NAME,
@@ -348,14 +357,20 @@ private suspend fun loadMissedCalls(
                     val number = c.getString(1) ?: continue
                     val date = c.getLong(2)
 
-                    val hasName = !cachedName.isNullOrBlank()
+                    // Fallback check in Contacts if CallLog cache is outdated
+                    var finalName = cachedName?.takeIf { it.isNotBlank() }
+                    if (finalName == null && hasReadContacts) {
+                        finalName = getContactName(context, number)
+                    }
+
+                    val isContact = finalName != null
 
                     out.add(
                         MissedCallItem(
-                            nameOrNumber = if (hasName) cachedName else number,
+                            nameOrNumber = finalName ?: number,
                             number = number,
                             dateMillis = date,
-                            isContact = hasName,
+                            isContact = isContact,
                         ),
                     )
                 }

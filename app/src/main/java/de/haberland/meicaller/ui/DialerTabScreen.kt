@@ -139,9 +139,13 @@ fun DialerTabScreen(
                 .fillMaxSize()
                 .padding(horizontal = 14.dp),
     ) {
-        Spacer(Modifier.height(6.dp))
-
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        // --- FIXED TOP SECTION: SUGGESTIONS ---
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
                 if (number.isBlank()) "Vorgeschlagen" else "Treffer",
                 style = MaterialTheme.typography.titleMedium,
@@ -161,50 +165,53 @@ fun DialerTabScreen(
             }
         }
 
-        Spacer(Modifier.height(6.dp))
+        // The suggestions list takes available space but doesn't push the bottom section
+        Box(modifier = Modifier.weight(1f)) {
+            SuggestionsCard(
+                canReadCallLog = hasCallLogPermission,
+                canReadContacts = hasContactsPermission,
+                query = number,
+                items = suggestions,
+                onPick = { picked -> number = picked },
+                onCall = { picked -> callOrAskPermission(picked) },
+            )
+        }
 
-        SuggestionsCard(
-            canReadCallLog = hasCallLogPermission,
-            canReadContacts = hasContactsPermission,
-            query = number,
-            items = suggestions,
-            onPick = { picked -> number = picked },
-            onCall = { picked -> callOrAskPermission(picked) },
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        OutlinedTextField(
-            value = number,
-            onValueChange = { number = it },
-            label = { Text("Nummer oder Name") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Spacer(Modifier.height(12.dp))
-        Spacer(Modifier.weight(1f))
-
-        DialPad(
-            onKey = { number += it },
-            onBackspace = { if (number.isNotEmpty()) number = number.dropLast(1) },
-            onClear = { number = "" },
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        Box(
+        // --- FIXED BOTTOM SECTION: INPUT & DIAL PAD ---
+        Column(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(bottom = 10.dp),
-            contentAlignment = Alignment.Center,
+                    .padding(vertical = 10.dp)
+                    .navigationBarsPadding(),
         ) {
-            CallButton(
-                acceptImageUri = settings.acceptButtonUri,
-                onClick = { callOrAskPermission(number) },
+            OutlinedTextField(
+                value = number,
+                onValueChange = { number = it },
+                label = { Text("Nummer oder Name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
             )
+
+            Spacer(Modifier.height(12.dp))
+
+            DialPad(
+                onKey = { number += it },
+                onBackspace = { if (number.isNotEmpty()) number = number.dropLast(1) },
+                onClear = { number = "" },
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CallButton(
+                    acceptImageUri = settings.acceptButtonUri,
+                    onClick = { callOrAskPermission(number) },
+                )
+            }
         }
     }
 }
@@ -238,7 +245,7 @@ private fun SuggestionsCard(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .heightIn(max = 220.dp),
+                .heightIn(min = 100.dp), // Ensure some minimal height so it doesn't collapse
     ) {
         when {
             query.isBlank() && !canReadCallLog -> {
@@ -258,14 +265,20 @@ private fun SuggestionsCard(
             }
 
             items.isEmpty() -> {
-                Column(Modifier.padding(14.dp)) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text("Keine Treffer.", style = MaterialTheme.typography.bodyMedium)
                     Text("Tipp: Tippe Name oder Nummer.", style = MaterialTheme.typography.bodySmall)
                 }
             }
 
             else -> {
-                LazyColumn {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
                     itemsIndexed(items) { idx, item ->
                         Row(
                             modifier =

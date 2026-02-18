@@ -1,5 +1,9 @@
 package de.haberland.meicaller.util
 
+import android.content.Context
+import android.net.Uri
+import android.provider.ContactsContract
+
 /**
  * Provides simple phone number normalization, particularly optimized for German (DE) numbers.
  * This function helps in creating consistent keys for comparisons or database lookups.
@@ -41,4 +45,31 @@ fun normalizeForCompare(
     }
 
     return out
+}
+
+/**
+ * Searches for a contact name for a given phone number using the Contacts provider.
+ * This is useful because the CallLog's cached name might be outdated.
+ */
+fun getContactName(context: Context, phoneNumber: String): String? {
+    if (phoneNumber.isBlank()) return null
+    
+    val uri = Uri.withAppendedPath(
+        ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+        Uri.encode(phoneNumber)
+    )
+    
+    val projection = arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME)
+    
+    return try {
+        context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                cursor.getString(0)
+            } else {
+                null
+            }
+        }
+    } catch (_: Exception) {
+        null
+    }
 }

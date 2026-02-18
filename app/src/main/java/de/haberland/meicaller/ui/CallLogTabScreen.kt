@@ -59,6 +59,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import de.haberland.meicaller.data.ContactBackgroundStore
+import de.haberland.meicaller.util.getContactName
 import de.haberland.meicaller.util.normalizeForCompare
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -95,11 +96,14 @@ fun CallLogTabScreen() {
     val hasCallLog =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) ==
             PackageManager.PERMISSION_GRANTED
+    val hasContacts =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
+            PackageManager.PERMISSION_GRANTED
 
     var refresh by remember { mutableIntStateOf(0) }
 
     // State representing the list of calls loaded from the system provider
-    val calls by produceState(initialValue = emptyList(), hasCallLog, refresh) {
+    val calls by produceState(initialValue = emptyList(), hasCallLog, hasContacts, refresh) {
         value = if (hasCallLog) loadCallLog(context) else emptyList()
     }
 
@@ -302,6 +306,10 @@ private suspend fun loadCallLog(
         val out = mutableListOf<CallLogItem>()
         val cr = context.contentResolver
 
+        val hasReadContacts =
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
+                PackageManager.PERMISSION_GRANTED
+
         val projection =
             arrayOf(
                 CallLog.Calls.CACHED_NAME,
@@ -324,15 +332,21 @@ private suspend fun loadCallLog(
                     val date = c.getLong(2)
                     val type = c.getInt(3)
 
-                    val hasName = !cachedName.isNullOrBlank()
+                    // Fallback check in Contacts if CallLog cache is outdated
+                    var finalName = cachedName?.takeIf { it.isNotBlank() }
+                    if (finalName == null && hasReadContacts) {
+                        finalName = getContactName(context, number)
+                    }
+
+                    val isContact = finalName != null
 
                     out.add(
                         CallLogItem(
-                            nameOrNumber = if (hasName) cachedName else number,
+                            nameOrNumber = finalName ?: number,
                             number = number,
                             dateMillis = date,
                             type = type,
-                            isContact = hasName,
+                            isContact = isContact,
                         ),
                     )
                 }
