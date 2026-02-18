@@ -15,8 +15,8 @@ android {
         applicationId = "de.haberland.meicaller"
         minSdk = 31
         targetSdk = 36
-        versionCode = 6
-        versionName = "Prototype 6 (UX polishing, bit of cleanup)"
+        versionCode = 8
+        versionName = "Prototype 8 (fix dtmf tone bug)"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

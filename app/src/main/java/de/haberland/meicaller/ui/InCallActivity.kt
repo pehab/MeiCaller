@@ -3,6 +3,8 @@ package de.haberland.meicaller.ui
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -239,7 +241,7 @@ private fun InCallScreen(
     }
 
     if (showDtmf) {
-        ModalBottomSheet(onDismissRequest = { }) {
+        ModalBottomSheet(onDismissRequest = { showDtmf = false }) {
             DtmfPad(onTone = { call.playDtmfTone(it) }, onStop = { call.stopDtmfTone() })
         }
     }
@@ -327,9 +329,9 @@ private fun InCallScreen(
                             )
                             InCallToggle(
                                 icon = Icons.Filled.Dialpad, 
-                                active = false, 
+                                active = showDtmf, 
                                 accentColor = accentColor,
-                                onClick = { }
+                                onClick = { showDtmf = true }
                             )
                         }
                         CallActionButton(
@@ -408,6 +410,35 @@ private fun formatDuration(seconds: Long): String {
 @Composable
 private fun DtmfPad(onTone: (Char) -> Unit, onStop: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val toneGenerator = remember {
+        try { ToneGenerator(AudioManager.STREAM_DTMF, 80) } catch (_: Exception) { null }
+    }
+    
+    DisposableEffect(Unit) {
+        onDispose { toneGenerator?.release() }
+    }
+
+    fun playToneLocal(ch: Char) {
+        val tone = when (ch) {
+            '1' -> ToneGenerator.TONE_DTMF_1
+            '2' -> ToneGenerator.TONE_DTMF_2
+            '3' -> ToneGenerator.TONE_DTMF_3
+            '4' -> ToneGenerator.TONE_DTMF_4
+            '5' -> ToneGenerator.TONE_DTMF_5
+            '6' -> ToneGenerator.TONE_DTMF_6
+            '7' -> ToneGenerator.TONE_DTMF_7
+            '8' -> ToneGenerator.TONE_DTMF_8
+            '9' -> ToneGenerator.TONE_DTMF_9
+            '0' -> ToneGenerator.TONE_DTMF_0
+            '*' -> ToneGenerator.TONE_DTMF_S
+            '#' -> ToneGenerator.TONE_DTMF_P
+            else -> -1
+        }
+        if (tone != -1) {
+            toneGenerator?.startTone(tone, 150)
+        }
+    }
+
     Column(Modifier.padding(16.dp).navigationBarsPadding()) {
         val rows = listOf(listOf('1', '2', '3'), listOf('4', '5', '6'), listOf('7', '8', '9'), listOf('*', '0', '#'))
         rows.forEach { r ->
@@ -416,6 +447,7 @@ private fun DtmfPad(onTone: (Char) -> Unit, onStop: () -> Unit) {
                     OutlinedButton(
                         onClick = { 
                             scope.launch { 
+                                playToneLocal(ch)
                                 onTone(ch)
                                 delay(200)
                                 onStop()
