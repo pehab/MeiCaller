@@ -1,1 +1,19 @@
-<resources />
+<resources>
+    <string name="app_name">MeiCaller</string>
+    <string name="settings">Einstellungen</string>
+    <string name="settings_title">Design-Einstellungen</string>
+    <string name="settings_section_colors">Farben</string>
+    <string name="settings_primary_color">Primärfarbe (Hex)</string>
+    <string name="settings_accent_color">Akzentfarbe (Hex)</string>
+    <string name="settings_section_background">Hintergrundbild</string>
+    <string name="settings_section_buttons">Anruf-Buttons</string>
+    <string name="settings_btn_accept">Annehmen</string>
+    <string name="settings_btn_reject">Ablehnen</string>
+    <string name="btn_save">Speichern</string>
+    <string name="btn_reset">Zurücksetzen</string>
+    <string name="btn_pick">Wählen</string>
+    <string name="tab_dialer">Dialer</string>
+    <string name="tab_favorites">Favoriten</string>
+    <string name="tab_call_log">Anrufliste</string>
+    <string name="tab_contacts">Kontakte</string>
+</resources>

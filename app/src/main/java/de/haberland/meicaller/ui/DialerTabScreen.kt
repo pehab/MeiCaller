@@ -2,13 +2,20 @@ package de.haberland.meicaller.ui
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
 import android.provider.CallLog
 import android.provider.ContactsContract
-import android.telecom.TelecomManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,19 +38,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material3.Card
-import androidx.compose.material3.DividerDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -51,286 +57,196 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.app.ActivityCompat
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import androidx.core.net.toUri
 import coil.compose.AsyncImage
 import de.haberland.meicaller.data.UiSettings
+import de.haberland.meicaller.util.getContactInfo
+import de.haberland.meicaller.util.normalizeForCompare
+import de.haberland.meicaller.util.placeCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * Screen displaying a dialer interface with a dial pad and search suggestions.
- * It allows users to type a number or name and search through contacts and call logs.
- * @param settings Current UI settings for colors and button images.
- * @param initialNumber Optional initial phone number to populate the dialer.
- */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DialerTabScreen(
     settings: UiSettings,
     initialNumber: String = "",
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     var number by remember { mutableStateOf(initialNumber) }
     var pendingCall by remember { mutableStateOf<String?>(null) }
+    var refreshSignal by remember { mutableIntStateOf(0) }
 
-    // Permission request launchers
-    val requestCallPermission =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            val n = pendingCall
-            if (granted && n != null) placeCall(context, n)
+    // Listen for contact and call log changes
+    DisposableEffect(context) {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                refreshSignal++
+            }
         }
+        context.contentResolver.registerContentObserver(ContactsContract.Contacts.CONTENT_URI, true, observer)
+        context.contentResolver.registerContentObserver(CallLog.Calls.CONTENT_URI, true, observer)
+        onDispose {
+            context.contentResolver.unregisterContentObserver(observer)
+        }
+    }
 
-    val requestCallLogPermission =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { /* UI updates */ }
+    val requestCallPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val n = pendingCall
+        if (granted && n != null) placeCall(context, n)
+    }
 
-    val requestContactsPermission =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { /* UI updates */ }
+    val requestCallLogPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val requestContactsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
-    /** Initiates a call or requests permission if not already granted. */
-    fun callOrAskPermission(n: String) {
-        val clean = n.trim()
-        if (clean.isEmpty()) return
-
-        val hasPermission =
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) ==
-                PackageManager.PERMISSION_GRANTED
-
+    fun callWithHaptic(n: String) {
+        if (n.isBlank()) return
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
         if (hasPermission) {
-            placeCall(context, clean)
+            placeCall(context, n)
         } else {
-            pendingCall = clean
+            pendingCall = n
             requestCallPermission.launch(Manifest.permission.CALL_PHONE)
         }
     }
 
-    val hasCallLogPermission =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) ==
-            PackageManager.PERMISSION_GRANTED
+    val hasCallLogPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+    val hasContactsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
 
-    val hasContactsPermission =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
-            PackageManager.PERMISSION_GRANTED
-
-    // Dynamically load suggestions based on the current input and available permissions
-    val suggestions by produceState(
-        initialValue = emptyList(),
-        number,
-        hasCallLogPermission,
-        hasContactsPermission,
-    ) {
-        value =
-            loadSuggestions(
-                context = context,
-                query = number,
-                canReadCallLog = hasCallLogPermission,
-                canReadContacts = hasContactsPermission,
-            )
+    val suggestions by produceState(initialValue = emptyList(), number, hasCallLogPermission, hasContactsPermission, refreshSignal) {
+        value = loadSuggestions(context, number, hasCallLogPermission, hasContactsPermission)
     }
 
     Column(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .padding(horizontal = 14.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
     ) {
-        // --- FIXED TOP SECTION: SUGGESTIONS ---
+        // Top Header
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(top = 6.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                if (number.isBlank()) "Vorgeschlagen" else "Treffer",
+                text = if (number.isBlank()) "Vorgeschlagen" else "Treffer",
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
             )
 
-            // Show permission buttons if access is missing
-            when {
-                !hasCallLogPermission ->
-                    TextButton(onClick = { requestCallLogPermission.launch(Manifest.permission.READ_CALL_LOG) }) {
-                        Text("Anrufliste erlauben")
-                    }
-                !hasContactsPermission ->
-                    TextButton(onClick = { requestContactsPermission.launch(Manifest.permission.READ_CONTACTS) }) {
-                        Text("Kontakte erlauben")
-                    }
+            if (!hasCallLogPermission || !hasContactsPermission) {
+                TextButton(onClick = {
+                    if (!hasCallLogPermission) requestCallLogPermission.launch(Manifest.permission.READ_CALL_LOG)
+                    else requestContactsPermission.launch(Manifest.permission.READ_CONTACTS)
+                }) {
+                    Text("Berechtigung fehlt", style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
 
-        // The suggestions list takes available space but doesn't push the bottom section
+        // Suggestions List with Animation
         Box(modifier = Modifier.weight(1f)) {
             SuggestionsCard(
-                canReadCallLog = hasCallLogPermission,
-                canReadContacts = hasContactsPermission,
-                query = number,
                 items = suggestions,
-                onPick = { picked -> number = picked },
-                onCall = { picked -> callOrAskPermission(picked) },
+                onPick = { picked -> 
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    number = picked 
+                },
+                onCall = { picked -> callWithHaptic(picked) }
             )
         }
 
-        // --- FIXED BOTTOM SECTION: INPUT & DIAL PAD ---
+        // Bottom Dialer Section
         Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 10.dp)
-                    .navigationBarsPadding(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp)
+                .navigationBarsPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             OutlinedTextField(
                 value = number,
                 onValueChange = { number = it },
-                label = { Text("Nummer oder Name") },
+                placeholder = { Text("Nummer oder Name", style = MaterialTheme.typography.bodyLarge) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                textStyle = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
             )
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
 
             DialPad(
-                onKey = { number += it },
-                onBackspace = { if (number.isNotEmpty()) number = number.dropLast(1) },
-                onClear = { number = "" },
+                onKey = { 
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    number += it 
+                },
+                onBackspace = { 
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    if (number.isNotEmpty()) number = number.dropLast(1) 
+                },
+                onClear = { 
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    number = "" 
+                }
             )
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(16.dp))
 
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center,
+            AnimatedVisibility(
+                visible = number.isNotBlank(),
+                enter = scaleIn() + fadeIn(),
+                exit = scaleOut() + fadeOut()
             ) {
                 CallButton(
                     acceptImageUri = settings.acceptButtonUri,
-                    onClick = { callOrAskPermission(number) },
+                    onClick = { callWithHaptic(number) }
                 )
+            }
+            
+            if (number.isBlank()) {
+                Spacer(Modifier.height(84.dp)) // Placeholder for call button height
             }
         }
     }
 }
 
 private enum class SuggestionSource { RECENT, CONTACT }
+private data class SuggestionItem(val title: String, val subtitle: String, val number: String, val source: SuggestionSource, val photoUri: String? = null)
 
-/**
- * Data class for a single search suggestion result.
- */
-private data class SuggestionItem(
-    val title: String,
-    val subtitle: String,
-    val number: String,
-    val source: SuggestionSource,
-)
-
-/**
- * Displays a list of suggested contacts or recent calls in a card.
- */
 @Composable
 private fun SuggestionsCard(
-    canReadCallLog: Boolean,
-    canReadContacts: Boolean,
-    query: String,
     items: List<SuggestionItem>,
     onPick: (String) -> Unit,
-    onCall: (String) -> Unit,
+    onCall: (String) -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(18.dp),
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 100.dp), // Ensure some minimal height so it doesn't collapse
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 80.dp)
     ) {
-        when {
-            query.isBlank() && !canReadCallLog -> {
-                Column(Modifier.padding(14.dp)) {
-                    Text("Für „Vorgeschlagen“ (letzte Anrufe) braucht MeiCaller Zugriff auf die Anrufliste.")
-                    Spacer(Modifier.height(8.dp))
-                    Text("→ Tippe oben auf „Anrufliste erlauben“.")
-                }
+        if (items.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Keine Treffer", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-
-            query.isNotBlank() && !canReadContacts && !canReadCallLog -> {
-                Column(Modifier.padding(14.dp)) {
-                    Text("Für Namenssuche brauchst du Kontakte – für letzte Anrufe die Anrufliste.")
-                    Spacer(Modifier.height(8.dp))
-                    Text("→ Tippe oben auf „Kontakte erlauben“ oder „Anrufliste erlauben“.")
-                }
-            }
-
-            items.isEmpty() -> {
-                Column(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text("Keine Treffer.", style = MaterialTheme.typography.bodyMedium)
-                    Text("Tipp: Tippe Name oder Nummer.", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-
-            else -> {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    itemsIndexed(items) { idx, item ->
-                        Row(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 68.dp)
-                                    .clickable { onPick(item.number) }
-                                    .padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Surface(
-                                modifier = Modifier.size(38.dp),
-                                shape = CircleShape,
-                                tonalElevation = 2.dp,
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(item.title.take(1).uppercase(), style = MaterialTheme.typography.titleMedium)
-                                }
-                            }
-
-                            Spacer(Modifier.width(12.dp))
-
-                            Column(Modifier.weight(1f)) {
-                                Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    item.subtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-
-                            Box(
-                                modifier = Modifier.width(52.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                IconButton(
-                                    onClick = { onCall(item.number) },
-                                    modifier = Modifier.size(40.dp),
-                                ) {
-                                    Icon(Icons.Filled.Call, contentDescription = "Anrufen", modifier = Modifier.size(22.dp))
-                                }
-                            }
-                        }
-
-                        if (idx != items.lastIndex) {
-                            HorizontalDivider(
-                                Modifier,
-                                DividerDefaults.Thickness,
-                                DividerDefaults.color,
-                            )
-                        }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
+                itemsIndexed(items) { idx, item ->
+                    SuggestionRow(item, onPick, onCall)
+                    if (idx != items.lastIndex) {
+                        HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                     }
                 }
             }
@@ -338,282 +254,147 @@ private fun SuggestionsCard(
     }
 }
 
-/**
- * Specialized button to initiate a call, supporting a custom image.
- */
 @Composable
-private fun CallButton(
-    acceptImageUri: String?,
-    onClick: () -> Unit,
-) {
-    Surface(
-        modifier =
-            Modifier
-                .size(84.dp)
+private fun SuggestionRow(item: SuggestionItem, onPick: (String) -> Unit, onCall: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onPick(item.number) }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
                 .clip(CircleShape)
-                .clickable(onClick = onClick),
+                .background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            if (item.photoUri != null) {
+                AsyncImage(model = item.photoUri, contentDescription = null, contentScale = ContentScale.Crop)
+            } else {
+                Text(item.title.take(1).uppercase(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
+        }
+
+        Spacer(Modifier.width(16.dp))
+
+        Column(Modifier.weight(1f)) {
+            Text(item.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
+
+        IconButton(onClick = { onCall(item.number) }) {
+            Icon(Icons.Filled.Call, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun DialPad(onKey: (String) -> Unit, onBackspace: () -> Unit, onClear: () -> Unit) {
+    val rows = listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("*", "0", "#"))
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        rows.forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                row.forEach { key ->
+                    DialButton(key, onClick = { onKey(key) }, modifier = Modifier.weight(1f))
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Spacer(Modifier.weight(1f))
+            DialButton("⌫", onClick = onBackspace, modifier = Modifier.weight(1f), isAction = true)
+            DialButton("C", onClick = onClear, modifier = Modifier.weight(1f), isAction = true)
+        }
+    }
+}
+
+@Composable
+private fun DialButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, isAction: Boolean = false) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.height(64.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = if (isAction) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f),
+        tonalElevation = if (isAction) 2.dp else 0.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(text, style = MaterialTheme.typography.headlineMedium.copy(fontSize = if (isAction) 24.sp else 28.sp))
+        }
+    }
+}
+
+@Composable
+private fun CallButton(acceptImageUri: String?, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(72.dp),
         shape = CircleShape,
         color = MaterialTheme.colorScheme.primary,
-        tonalElevation = 4.dp,
+        tonalElevation = 8.dp
     ) {
         if (!acceptImageUri.isNullOrBlank()) {
-            AsyncImage(
-                model = acceptImageUri,
-                contentDescription = "Anrufen",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
+            AsyncImage(model = acceptImageUri, contentDescription = null, contentScale = ContentScale.Crop)
         } else {
             Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Call, contentDescription = "Anrufen", modifier = Modifier.size(36.dp))
+                Icon(Icons.Filled.Call, contentDescription = null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onPrimary)
             }
         }
     }
 }
 
-/**
- * Standard dial pad UI component with numeric keys and backspace/clear buttons.
- */
-@Composable
-private fun DialPad(
-    onKey: (String) -> Unit,
-    onBackspace: () -> Unit,
-    onClear: () -> Unit,
-) {
-    val rows =
-        listOf(
-            listOf("1", "2", "3"),
-            listOf("4", "5", "6"),
-            listOf("7", "8", "9"),
-            listOf("*", "0", "#"),
-        )
+private suspend fun loadSuggestions(context: Context, query: String, canLog: Boolean, canContacts: Boolean): List<SuggestionItem> = withContext(Dispatchers.IO) {
+    val q = query.trim()
+    val results = mutableListOf<SuggestionItem>()
+    if (q.isBlank()) {
+        if (canLog) results += loadRecentCalls(context)
+        return@withContext results
+    }
+    if (canContacts) results += searchContacts(context, q)
+    if (canLog) results += searchCallLog(context, q)
+    
+    results
+        .sortedBy { if (it.source == SuggestionSource.CONTACT) 0 else 1 }
+        .distinctBy { normalizeForCompare(it.number) }
+        .take(15)
+}
 
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        rows.forEach { row ->
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                row.forEach { key ->
-                    OutlinedButton(
-                        onClick = { onKey(key) },
-                        modifier =
-                            Modifier
-                                .weight(1f)
-                                .height(64.dp),
-                        shape = RoundedCornerShape(22.dp),
-                        contentPadding = PaddingValues(0.dp),
-                    ) {
-                        Text(key, style = MaterialTheme.typography.headlineSmall)
-                    }
-                }
-            }
-        }
-
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            OutlinedButton(
-                onClick = onBackspace,
-                modifier = Modifier.size(56.dp),
-                shape = CircleShape,
-            ) { Text("⌫") }
-
-            Spacer(Modifier.width(8.dp))
-
-            OutlinedButton(
-                onClick = onClear,
-                modifier = Modifier.size(56.dp),
-                shape = CircleShape,
-            ) { Text("C") }
+private fun loadRecentCalls(context: Context): List<SuggestionItem> {
+    val list = mutableListOf<SuggestionItem>()
+    context.contentResolver.query(CallLog.Calls.CONTENT_URI, arrayOf(CallLog.Calls.NUMBER), null, null, "${CallLog.Calls.DATE} DESC")?.use { c ->
+        while (c.moveToNext() && list.size < 10) {
+            val num = c.getString(0) ?: continue
+            val info = getContactInfo(context, num)
+            list.add(SuggestionItem(info.name ?: num, num, num, SuggestionSource.RECENT, info.photoUri?.toString()))
         }
     }
+    return list
 }
 
-/**
- * Loads suggestions based on input query from contacts and call logs.
- */
-private suspend fun loadSuggestions(
-    context: Context,
-    query: String,
-    canReadCallLog: Boolean,
-    canReadContacts: Boolean,
-): List<SuggestionItem> =
-    withContext(Dispatchers.IO) {
-        val q = query.trim()
-        val out = mutableListOf<SuggestionItem>()
-
-        if (q.isBlank()) {
-            if (canReadCallLog) out += loadRecentCallsAsSuggestions(context)
-            return@withContext out
-        }
-
-        if (canReadContacts) out += searchContactsAsSuggestions(context, q)
-        if (canReadCallLog) out += searchCallLogAsSuggestions(context, q)
-
-        out
-            .distinctBy { normalizeNumberForCompare(it.number) }
-            .take(10)
-    }
-
-/** Simplifies a number for comparison (digits and optional plus). */
-private fun normalizeNumberForCompare(n: String): String {
-    val trimmed = n.trim()
-    val hasPlus = trimmed.startsWith("+")
-    val digits = trimmed.filter { it.isDigit() }
-    return (if (hasPlus) "+" else "") + digits
-}
-
-/** Fetches recent calls from the call log provider. */
-private fun loadRecentCallsAsSuggestions(
-    context: Context,
-    limit: Int = 8,
-): List<SuggestionItem> {
-    val results = mutableListOf<SuggestionItem>()
-    val cr = context.contentResolver
-
-    val projection =
-        arrayOf(
-            CallLog.Calls.CACHED_NAME,
-            CallLog.Calls.NUMBER,
-        )
-
-    cr
-        .query(
-            CallLog.Calls.CONTENT_URI,
-            projection,
-            null,
-            null,
-            "${CallLog.Calls.DATE} DESC",
-        )?.use { c ->
-            while (c.moveToNext() && results.size < limit) {
-                val cachedName = c.getString(0)
-                val num = c.getString(1) ?: continue
-                val title = cachedName?.takeIf { it.isNotBlank() } ?: num
-
-                results.add(
-                    SuggestionItem(
-                        title = title,
-                        subtitle = num,
-                        number = num,
-                        source = SuggestionSource.RECENT,
-                    ),
-                )
-            }
-        }
-    return results
-}
-
-/** Searches the call log for entries matching the query. */
-private fun searchCallLogAsSuggestions(
-    context: Context,
-    query: String,
-    limit: Int = 8,
-): List<SuggestionItem> {
-    val results = mutableListOf<SuggestionItem>()
-    val cr = context.contentResolver
-
-    val projection =
-        arrayOf(
-            CallLog.Calls.CACHED_NAME,
-            CallLog.Calls.NUMBER,
-        )
-
-    val where = "${CallLog.Calls.CACHED_NAME} LIKE ? OR ${CallLog.Calls.NUMBER} LIKE ?"
-    val args = arrayOf("%$query%", "%$query%")
-
-    cr
-        .query(
-            CallLog.Calls.CONTENT_URI,
-            projection,
-            where,
-            args,
-            "${CallLog.Calls.DATE} DESC",
-        )?.use { c ->
-            while (c.moveToNext() && results.size < limit) {
-                val cachedName = c.getString(0)
-                val num = c.getString(1) ?: continue
-                val title = cachedName?.takeIf { it.isNotBlank() } ?: num
-
-                results.add(
-                    SuggestionItem(
-                        title = title,
-                        subtitle = "Letzter Anruf · $num",
-                        number = num,
-                        source = SuggestionSource.RECENT,
-                    ),
-                )
-            }
-        }
-    return results
-}
-
-/** Searches the system contacts for entries matching the query. */
-private fun searchContactsAsSuggestions(
-    context: Context,
-    query: String,
-    limit: Int = 8,
-): List<SuggestionItem> {
-    val results = mutableListOf<SuggestionItem>()
-    val cr = context.contentResolver
-
+private fun searchContacts(context: Context, q: String): List<SuggestionItem> {
+    val list = mutableListOf<SuggestionItem>()
     val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
-    val projection =
-        arrayOf(
-            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-            ContactsContract.CommonDataKinds.Phone.NUMBER,
-        )
-
-    val selection =
-        "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ? OR " +
-            "${ContactsContract.CommonDataKinds.Phone.NUMBER} LIKE ?"
-
-    val args = arrayOf("%$query%", "%$query%")
-
-    cr
-        .query(
-            uri,
-            projection,
-            selection,
-            args,
-            "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC",
-        )?.use { c ->
-            while (c.moveToNext() && results.size < limit) {
-                val name = c.getString(0)?.takeIf { it.isNotBlank() } ?: continue
-                val num = c.getString(1)?.takeIf { it.isNotBlank() } ?: continue
-
-                results.add(
-                    SuggestionItem(
-                        title = name,
-                        subtitle = num,
-                        number = num,
-                        source = SuggestionSource.CONTACT,
-                    ),
-                )
-            }
+    val proj = arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER, ContactsContract.CommonDataKinds.Phone.PHOTO_THUMBNAIL_URI)
+    val sel = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ? OR ${ContactsContract.CommonDataKinds.Phone.NUMBER} LIKE ?"
+    val args = arrayOf("%$q%", "%$q%")
+    context.contentResolver.query(uri, proj, sel, args, null)?.use { c ->
+        while (c.moveToNext() && list.size < 10) {
+            val name = c.getString(0) ?: continue
+            list.add(SuggestionItem(name, c.getString(1) ?: "", c.getString(1) ?: "", SuggestionSource.CONTACT, c.getString(2)))
         }
-    return results
+    }
+    return list
 }
 
-/**
- * Initiates a phone call or falls back to the system dialer if permissions are missing.
- */
-private fun placeCall(
-    context: Context,
-    number: String,
-) {
-    val clean = number.trim()
-    if (clean.isEmpty()) return
-
-    val uri = "tel:$clean".toUri()
-    val telecom = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-    try {
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
-            return
+private fun searchCallLog(context: Context, q: String): List<SuggestionItem> {
+    val list = mutableListOf<SuggestionItem>()
+    val sel = "${CallLog.Calls.CACHED_NAME} LIKE ? OR ${CallLog.Calls.NUMBER} LIKE ?"
+    context.contentResolver.query(CallLog.Calls.CONTENT_URI, arrayOf(CallLog.Calls.NUMBER), sel, arrayOf("%$q%", "%$q%"), null)?.use { c ->
+        while (c.moveToNext() && list.size < 10) {
+            val num = c.getString(0) ?: continue
+            val info = getContactInfo(context, num)
+            list.add(SuggestionItem(info.name ?: num, num, num, SuggestionSource.RECENT, info.photoUri?.toString()))
         }
-        telecom.placeCall(uri, null)
-    } catch (_: Throwable) {
-        context.startActivity(Intent(Intent.ACTION_DIAL, uri))
     }
+    return list
 }

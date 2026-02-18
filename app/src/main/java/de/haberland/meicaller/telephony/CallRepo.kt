@@ -137,8 +137,11 @@ object CallRepo {
         val available = mutableAvailableEndpoints.value
         if (available.isEmpty()) return
 
-        val wantSpeaker = current.endpointType != CallEndpoint.TYPE_SPEAKER
-        val targetType = if (wantSpeaker) CallEndpoint.TYPE_SPEAKER else CallEndpoint.TYPE_EARPIECE
+        val targetType = if (current.endpointType == CallEndpoint.TYPE_SPEAKER) {
+            CallEndpoint.TYPE_EARPIECE
+        } else {
+            CallEndpoint.TYPE_SPEAKER
+        }
         val target = available.firstOrNull { it.endpointType == targetType } ?: return
 
         val executor = ContextCompat.getMainExecutor(context)

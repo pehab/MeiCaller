@@ -32,8 +32,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import de.haberland.meicaller.data.UiSettings
 import de.haberland.meicaller.data.UiSettingsStore
 import de.haberland.meicaller.ui.CallLogTabScreen
@@ -42,123 +43,83 @@ import de.haberland.meicaller.ui.FavoritesTabScreen
 import de.haberland.meicaller.ui.SettingsActivity
 import de.haberland.meicaller.ui.theme.MeiCallerTheme
 
-/**
- * Main activity of the application, serving as the entry point.
- * It initializes the theme based on user settings and sets up the main navigation structure.
- */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         setContent {
-            // Collect UI settings from DataStore to apply the theme dynamically
             val settings by UiSettingsStore.flow(this).collectAsState(initial = UiSettings())
-
             MeiCallerTheme(primaryHex = settings.primaryHex, accentHex = settings.accentHex) {
                 Surface(Modifier.fillMaxSize()) {
-                    MainTabs(settings = settings)
+                    MainScreen(settings = settings)
                 }
             }
         }
     }
 }
 
-/**
- * Represents the different tabs available in the main screen.
- */
 private enum class TabItem(
-    val label: String,
+    val labelRes: Int,
+    val icon: ImageVector,
 ) {
-    Dialer("Dialer"),
-    Favorites("Favoriten"),
-    CallLog("Anrufliste"),
-    Contacts("Kontakte"),
+    Dialer(R.string.tab_dialer, Icons.Filled.Call),
+    Favorites(R.string.tab_favorites, Icons.Filled.Star),
+    CallLog(R.string.tab_call_log, Icons.Filled.History),
+    Contacts(R.string.tab_contacts, Icons.Filled.Contacts),
 }
 
-/**
- * Main UI component that manages the tab navigation and top app bar.
- * @param settings Current UI settings for colors and other preferences.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MainTabs(settings: UiSettings) {
+private fun MainScreen(settings: UiSettings) {
     val context = LocalContext.current
-    var tab by remember { mutableStateOf(TabItem.Dialer) }
+    var selectedTab by remember { mutableStateOf(TabItem.Dialer) }
 
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             Column {
                 CenterAlignedTopAppBar(
-                    title = { Text("MeiCaller") },
+                    title = { Text(stringResource(R.string.app_name)) },
                     actions = {
-                        // Open the settings activity
                         IconButton(onClick = {
                             context.startActivity(Intent(context, SettingsActivity::class.java))
                         }) {
-                            Icon(
-                                Icons.Filled.Settings,
-                                contentDescription = "Einstellungen",
-                            )
+                            Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.settings))
                         }
                     },
                 )
 
-                // Navigation bar using tabs
-                PrimaryTabRow(selectedTabIndex = tab.ordinal) {
-                    Tab(
-                        selected = tab == TabItem.Dialer,
-                        onClick = { tab = TabItem.Dialer },
-                        text = { Text(TabItem.Dialer.label) },
-                        icon = { Icon(Icons.Filled.Call, contentDescription = null) },
-                    )
-                    Tab(
-                        selected = tab == TabItem.Favorites,
-                        onClick = { tab = TabItem.Favorites },
-                        text = { Text(TabItem.Favorites.label) },
-                        icon = { Icon(Icons.Filled.Star, contentDescription = null) },
-                    )
-                    Tab(
-                        selected = tab == TabItem.CallLog,
-                        onClick = { tab = TabItem.CallLog },
-                        text = { Text(TabItem.CallLog.label) },
-                        icon = { Icon(Icons.Filled.History, contentDescription = null) },
-                    )
-                    Tab(
-                        selected = tab == TabItem.Contacts,
-                        onClick = {
-                            // Open system contacts application via intent
-                            val i =
-                                Intent(Intent.ACTION_VIEW).apply {
-                                    type = "vnd.android.cursor.dir/contact"
+                PrimaryTabRow(selectedTabIndex = selectedTab.ordinal) {
+                    TabItem.entries.forEach { item ->
+                        Tab(
+                            selected = selectedTab == item,
+                            onClick = {
+                                if (item == TabItem.Contacts) {
+                                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                                        type = "vnd.android.cursor.dir/contact"
+                                    }
+                                    context.startActivity(intent)
+                                } else {
+                                    selectedTab = item
                                 }
-                            context.startActivity(i)
-                        },
-                        text = { Text(TabItem.Contacts.label) },
-                        icon = { Icon(Icons.Filled.Contacts, contentDescription = null) },
-                    )
+                            },
+                            text = { Text(stringResource(item.labelRes)) },
+                            icon = { Icon(item.icon, contentDescription = null) },
+                        )
+                    }
                 }
             }
         },
     ) { pad ->
         Box(
-            modifier =
-                Modifier
-                    .padding(pad)
-                    .fillMaxSize(),
+            modifier = Modifier
+                .padding(pad)
+                .fillMaxSize(),
         ) {
-            // Display the selected tab's content
-            when (tab) {
-                TabItem.Dialer ->
-                    DialerTabScreen(
-                        settings = settings,
-                    )
+            when (selectedTab) {
+                TabItem.Dialer -> DialerTabScreen(settings = settings)
                 TabItem.Favorites -> FavoritesTabScreen()
                 TabItem.CallLog -> CallLogTabScreen()
-                TabItem.Contacts -> {
-                    // This tab triggers an external activity, showing a temporary message here
-                    Text("Kontakte-App wird geöffnet…", modifier = Modifier.padding(16.dp))
-                }
+                TabItem.Contacts -> { /* Wird extern abgehandelt */ }
             }
         }
     }

@@ -15,8 +15,8 @@ android {
         applicationId = "de.haberland.meicaller"
         minSdk = 31
         targetSdk = 36
-        versionCode = 5
-        versionName = "Prototype 5 (Contact refresh after add. Fix dialer layout)"
+        versionCode = 6
+        versionName = "Prototype 6 (UX polishing, bit of cleanup)"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

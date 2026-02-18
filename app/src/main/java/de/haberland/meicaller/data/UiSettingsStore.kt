@@ -10,15 +10,10 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Data class holding customizable UI settings for the application.
- * @property primaryHex The primary theme color in hex format.
- * @property accentHex The accent theme color in hex format.
- * @property backgroundUri URI for the global call background image.
- * @property acceptButtonUri URI for the custom accept call button image.
- * @property rejectButtonUri URI for the custom reject call button image.
  */
 data class UiSettings(
-    val primaryHex: String = "#B39DDB", // Default Light Purple
-    val accentHex: String = "#7C4DFF", // Default Accent Purple
+    val primaryHex: String = "#B39DDB",
+    val accentHex: String = "#7C4DFF",
     val backgroundUri: String? = null,
     val acceptButtonUri: String? = null,
     val rejectButtonUri: String? = null,
@@ -28,7 +23,6 @@ private val Context.dataStore by preferencesDataStore(name = "ui_settings")
 
 /**
  * Manages the storage and retrieval of UI settings using Jetpack DataStore.
- * It provides a flow to observe settings changes and functions to update them.
  */
 object UiSettingsStore {
     private val KEY_PRIMARY = stringPreferencesKey("primaryHex")
@@ -37,7 +31,9 @@ object UiSettingsStore {
     private val KEY_ACCEPT = stringPreferencesKey("acceptButtonUri")
     private val KEY_REJECT = stringPreferencesKey("rejectButtonUri")
 
-    /** Returns a flow that emits the latest UiSettings whenever they change. */
+    /** 
+     * Returns a flow that emits the latest [UiSettings].
+     */
     fun flow(context: Context): Flow<UiSettings> =
         context.dataStore.data.map { prefs ->
             UiSettings(
@@ -49,47 +45,27 @@ object UiSettingsStore {
             )
         }
 
-    /** Updates the primary theme color. */
-    suspend fun setPrimary(
-        context: Context,
-        hex: String,
-    ) {
+    suspend fun setPrimary(context: Context, hex: String) {
         context.dataStore.edit { it[KEY_PRIMARY] = hex }
     }
 
-    /** Updates the accent theme color. */
-    suspend fun setAccent(
-        context: Context,
-        hex: String,
-    ) {
+    suspend fun setAccent(context: Context, hex: String) {
         context.dataStore.edit { it[KEY_ACCENT] = hex }
     }
 
-    /** Sets or removes the global background image URI. */
-    suspend fun setBackgroundUri(
-        context: Context,
-        uri: Uri?,
-    ) {
+    suspend fun setBackgroundUri(context: Context, uri: Uri?) {
         context.dataStore.edit {
             if (uri == null) it.remove(KEY_BG) else it[KEY_BG] = uri.toString()
         }
     }
 
-    /** Sets or removes the custom accept call button image URI. */
-    suspend fun setAcceptButtonUri(
-        context: Context,
-        uri: Uri?,
-    ) {
+    suspend fun setAcceptButtonUri(context: Context, uri: Uri?) {
         context.dataStore.edit {
             if (uri == null) it.remove(KEY_ACCEPT) else it[KEY_ACCEPT] = uri.toString()
         }
     }
 
-    /** Sets or removes the custom reject call button image URI. */
-    suspend fun setRejectButtonUri(
-        context: Context,
-        uri: Uri?,
-    ) {
+    suspend fun setRejectButtonUri(context: Context, uri: Uri?) {
         context.dataStore.edit {
             if (uri == null) it.remove(KEY_REJECT) else it[KEY_REJECT] = uri.toString()
         }
