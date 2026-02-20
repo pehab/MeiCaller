@@ -15,8 +15,8 @@ android {
         applicationId = "de.haberland.meicaller"
         minSdk = 31
         targetSdk = 36
-        versionCode = 9
-        versionName = "Prototype 9 (fixed crash at startup)"
+        versionCode = 10
+        versionName = "Prototype 10 (unknown caller handling, color picker)"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

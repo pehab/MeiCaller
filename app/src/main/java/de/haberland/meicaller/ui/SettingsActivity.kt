@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,11 +35,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -45,9 +49,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.toColorInt
 import androidx.lifecycle.lifecycleScope
 import coil.compose.AsyncImage
 import de.haberland.meicaller.R
@@ -135,13 +142,13 @@ private fun SettingsScreen(
         ) {
             // Colors Section
             SettingsSection(title = stringResource(R.string.settings_section_colors)) {
-                ColorInput(
+                ColorPickerInput(
                     label = stringResource(R.string.settings_primary_color),
                     initialHex = settings.primaryHex,
                     onSave = onSavePrimary
                 )
-                Spacer(Modifier.height(16.dp))
-                ColorInput(
+                Spacer(Modifier.height(24.dp))
+                ColorPickerInput(
                     label = stringResource(R.string.settings_accent_color),
                     initialHex = settings.accentHex,
                     onSave = onSaveAccent
@@ -196,37 +203,76 @@ private fun SettingsScreen(
 }
 
 @Composable
-private fun ColorInput(
+private fun ColorPickerInput(
     label: String,
     initialHex: String,
     onSave: (String) -> Unit
 ) {
     var text by remember(initialHex) { mutableStateOf(initialHex) }
+    var showPicker by remember { mutableStateOf(false) }
     val parsedColor = remember(text) { parseHexSafe(text) }
 
+    val presets = listOf("#2196F3", "#4CAF50", "#F44336", "#FF9800", "#9C27B0", "#795548", "#607D8B", "#000000")
+
     Column {
+        Text(label, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(8.dp))
+        
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
                     .background(parsedColor ?: Color.Gray)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                    .clickable { showPicker = !showPicker }
             )
             Spacer(Modifier.width(12.dp))
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                label = { Text(label) },
                 singleLine = true,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                textStyle = MaterialTheme.typography.bodyLarge
             )
         }
-        if (text != initialHex && parsedColor != null) {
+
+        if (showPicker) {
+            Spacer(Modifier.height(16.dp))
+            HueSlider(
+                initialColor = parsedColor ?: Color.Blue,
+                onColorChanged = { 
+                    val hex = String.format("#%06X", (0xFFFFFF and it.toArgb()))
+                    text = hex
+                }
+            )
+            
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                presets.forEach { p ->
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color(p.toColorInt()))
+                            .border(if (text.equals(p, ignoreCase = true)) 2.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                            .clickable { text = p }
+                    )
+                }
+            }
+        }
+
+        if (text.trim().uppercase() != initialHex.trim().uppercase() && parsedColor != null) {
             Button(
-                onClick = { onSave(text.trim()) },
+                onClick = { 
+                    onSave(text.trim()) 
+                    showPicker = false
+                },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp)
+                    .padding(top = 12.dp),
+                shape = RoundedCornerShape(12.dp)
             ) {
                 Text(stringResource(R.string.btn_save))
             }
@@ -235,14 +281,48 @@ private fun ColorInput(
 }
 
 @Composable
+private fun HueSlider(initialColor: Color, onColorChanged: (Color) -> Unit) {
+    val hsv = remember(initialColor) {
+        val out = FloatArray(3)
+        android.graphics.Color.colorToHSV(initialColor.toArgb(), out)
+        out
+    }
+    var hue by remember(initialColor) { mutableFloatStateOf(hsv[0]) }
+
+    Column {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(12.dp)
+                .clip(CircleShape)
+                .background(
+                    brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red
+                        )
+                    )
+                )
+        )
+        Slider(
+            value = hue,
+            onValueChange = {
+                hue = it
+                onColorChanged(Color(android.graphics.Color.HSVToColor(floatArrayOf(it, 0.7f, 0.9f))))
+            },
+            valueRange = 0f..360f
+        )
+    }
+}
+
+@Composable
 private fun SettingsSection(title: String, content: @Composable () -> Unit) {
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(12.dp))
+        Column(Modifier.padding(20.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(16.dp))
             content()
         }
     }
@@ -263,7 +343,8 @@ private fun ImagePickerItem(
             modifier = Modifier
                 .size(80.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             if (!uri.isNullOrBlank()) {
@@ -276,10 +357,10 @@ private fun ImagePickerItem(
             }
         }
         Spacer(Modifier.height(8.dp))
-        Button(onClick = onPick, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = onPick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
             Text(stringResource(R.string.btn_pick))
         }
-        OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
             Text(stringResource(R.string.btn_reset))
         }
     }

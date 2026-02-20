@@ -13,6 +13,7 @@ import android.provider.ContactsContract
 import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.CallEndpoint
+import android.telecom.TelecomManager
 import android.telecom.VideoProfile
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -203,13 +204,24 @@ private fun InCallScreen(
     }
 
     LaunchedEffect(call) {
-        val num = (call.details?.handle?.schemeSpecificPart ?: "").trim()
-        number = num
-        onNumberObserved(num)
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
-            val info = lookupContactInfoByNumber(context, num)
-            displayName = info.name
-            contactPhotoUri = info.photoUri
+        val presentation = call.details?.handlePresentation ?: TelecomManager.PRESENTATION_ALLOWED
+        val rawNum = call.details?.handle?.schemeSpecificPart?.trim() ?: ""
+
+        if (presentation != TelecomManager.PRESENTATION_ALLOWED) {
+            number = null
+            displayName = when (presentation) {
+                TelecomManager.PRESENTATION_RESTRICTED -> "Private Nummer"
+                TelecomManager.PRESENTATION_PAYPHONE -> "Öffentliches Telefon"
+                else -> "Unbekannt"
+            }
+        } else {
+            number = rawNum
+            onNumberObserved(rawNum)
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+                val info = lookupContactInfoByNumber(context, rawNum)
+                displayName = info.name
+                contactPhotoUri = info.photoUri
+            }
         }
         CallRepo.refreshFromService(service)
     }
@@ -266,7 +278,9 @@ private fun InCallScreen(
             Spacer(Modifier.height(24.dp))
             
             Text(displayName ?: number ?: "Unbekannt", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-            Text(number ?: "", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!number.isNullOrBlank()) {
+                Text(number ?: "", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             
             Spacer(Modifier.height(12.dp))
             

@@ -5,7 +5,6 @@ import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.telecom.TelecomManager
 import androidx.activity.ComponentActivity
@@ -192,16 +191,9 @@ private fun SetupScreen(onConfigChanged: () -> Unit) {
             description = "MeiCaller für Anrufe verwenden",
             isDone = isDefaultDialer,
             onClick = {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val roleManager = context.getSystemService(RoleManager::class.java)
-                    val intent = roleManager?.createRequestRoleIntent(RoleManager.ROLE_DIALER)
-                    if (intent != null) dialerLauncher.launch(intent)
-                } else {
-                    val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER).apply {
-                        putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName)
-                    }
-                    dialerLauncher.launch(intent)
-                }
+                val roleManager = context.getSystemService(RoleManager::class.java)
+                val intent = roleManager?.createRequestRoleIntent(RoleManager.ROLE_DIALER)
+                if (intent != null) dialerLauncher.launch(intent)
             }
         )
     }

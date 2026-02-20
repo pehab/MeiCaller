@@ -78,6 +78,7 @@ data class CallLogItem(
     val dateMillis: Long,
     val type: Int,
     val isContact: Boolean,
+    val numberVisible: Boolean,
 )
 
 @Composable
@@ -91,7 +92,6 @@ fun CallLogTabScreen() {
 
     var refreshTrigger by remember { mutableIntStateOf(0) }
 
-    // Auto-Refresh wenn man zur App zurückkehrt (z.B. nach Kontakt speichern)
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -133,13 +133,15 @@ fun CallLogTabScreen() {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
             items(calls) { item ->
                 val normalized = remember(item.number) { normalizeForCompare(item.number) }
-                val bgUri by ContactBackgroundStore.backgroundUriFlow(context, normalized).collectAsState(initial = null)
+                val bgUri by if (item.numberVisible) {
+                    ContactBackgroundStore.backgroundUriFlow(context, normalized).collectAsState(initial = null)
+                } else remember { mutableStateOf(null) }
 
                 CallLogRow(
                     item = item,
                     accentColor = accentColor,
                     hasCustomBackground = !bgUri.isNullOrBlank(),
-                    onCall = { placeCall(context, item.number) },
+                    onCall = { if (item.numberVisible) placeCall(context, item.number) },
                     onAddContact = { addToContacts(context, item.number) },
                     onSetBackground = {
                         pendingBgKey = normalized
@@ -177,7 +179,7 @@ private fun CallLogRow(
     Card(
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = if (isMissed) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surface),
-        modifier = Modifier.fillMaxWidth().clickable { onCall() },
+        modifier = Modifier.fillMaxWidth().clickable(enabled = item.numberVisible) { onCall() },
     ) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(
@@ -195,22 +197,24 @@ private fun CallLogRow(
 
             Column(Modifier.weight(1f)) {
                 Text(item.nameOrNumber, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (isMissed) FontWeight.Bold else FontWeight.Normal)
-                Text("${item.number} · $dateText", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${if (item.numberVisible) item.number else ""} · $dateText".trimStart(' ', '·'), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
 
-            if (!item.isContact) {
+            if (!item.isContact && item.numberVisible) {
                 IconButton(onClick = onAddContact) { Icon(Icons.Filled.PersonAdd, contentDescription = null) }
             }
 
-            IconButton(onClick = onSetBackground) {
-                Icon(Icons.Filled.Image, contentDescription = null, tint = if (hasCustomBackground) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            
-            if (hasCustomBackground) {
-                IconButton(onClick = onClearBackground) { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-            }
+            if (item.numberVisible) {
+                IconButton(onClick = onSetBackground) {
+                    Icon(Icons.Filled.Image, contentDescription = null, tint = if (hasCustomBackground) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                
+                if (hasCustomBackground) {
+                    IconButton(onClick = onClearBackground) { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                }
 
-            IconButton(onClick = onCall) { Icon(Icons.Filled.Call, contentDescription = null) }
+                IconButton(onClick = onCall) { Icon(Icons.Filled.Call, contentDescription = null) }
+            }
         }
     }
 }
@@ -219,16 +223,51 @@ private suspend fun loadCallLog(context: Context, limit: Int = 120): List<CallLo
     val out = mutableListOf<CallLogItem>()
     val hasReadContacts = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
 
+    val projection = arrayOf(
+        CallLog.Calls.CACHED_NAME,
+        CallLog.Calls.NUMBER,
+        CallLog.Calls.DATE,
+        CallLog.Calls.TYPE,
+        CallLog.Calls.NUMBER_PRESENTATION
+    )
+
     context.contentResolver.query(
         CallLog.Calls.CONTENT_URI,
-        arrayOf(CallLog.Calls.CACHED_NAME, CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.TYPE),
+        projection,
         null, null, "${CallLog.Calls.DATE} DESC"
     )?.use { c ->
+        val nameIdx = c.getColumnIndex(CallLog.Calls.CACHED_NAME)
+        val numIdx = c.getColumnIndex(CallLog.Calls.NUMBER)
+        val dateIdx = c.getColumnIndex(CallLog.Calls.DATE)
+        val typeIdx = c.getColumnIndex(CallLog.Calls.TYPE)
+        val presIdx = c.getColumnIndex(CallLog.Calls.NUMBER_PRESENTATION)
+
         while (c.moveToNext() && out.size < limit) {
-            val num = c.getString(1) ?: continue
-            var name = c.getString(0)?.takeIf { it.isNotBlank() }
-            if (name == null && hasReadContacts) name = getContactName(context, num)
-            out.add(CallLogItem(name ?: num, num, c.getLong(2), c.getInt(3), name != null))
+            val presentation = if (presIdx != -1) c.getInt(presIdx) else CallLog.Calls.PRESENTATION_ALLOWED
+            val num = c.getString(numIdx) ?: ""
+            val name = if (nameIdx != -1) c.getString(nameIdx)?.takeIf { it.isNotBlank() } else null
+            
+            val isVisible = presentation == CallLog.Calls.PRESENTATION_ALLOWED && num.isNotBlank()
+            
+            val finalName = when {
+                !isVisible -> when (presentation) {
+                    CallLog.Calls.PRESENTATION_RESTRICTED -> "Private Nummer"
+                    CallLog.Calls.PRESENTATION_PAYPHONE -> "Öffentliches Telefon"
+                    else -> "Unbekannte Nummer"
+                }
+                name != null -> name
+                hasReadContacts -> getContactName(context, num) ?: num
+                else -> num
+            }
+
+            out.add(CallLogItem(
+                nameOrNumber = finalName,
+                number = if (isVisible) num else "",
+                dateMillis = c.getLong(dateIdx),
+                type = c.getInt(typeIdx),
+                isContact = name != null || (!isVisible),
+                numberVisible = isVisible
+            ))
         }
     }
     out
