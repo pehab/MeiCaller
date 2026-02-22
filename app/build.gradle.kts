@@ -1,8 +1,10 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.crashlytics)
     id("org.jlleitschuh.gradle.ktlint") version "14.0.1"
     id("io.gitlab.arturbosch.detekt") version "1.23.8"
 }
@@ -15,13 +17,16 @@ android {
         applicationId = "de.haberland.meicaller"
         minSdk = 31
         targetSdk = 36
-        versionCode = 10
-        versionName = "Prototype 10 (unknown caller handling, color picker)"
+        versionCode = 12
+        versionName = "Prototype 12 (Crashlytics)"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures { 
+        compose = true 
+        buildConfig = true // Aktiviert BuildConfig für MeiCallerApp
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -42,13 +47,9 @@ kotlin {
 }
 
 ktlint {
-    // Compose nutzt oft UpperCamelCase für @Composable Funktionen
-    // und star-imports für androidx.compose.* sind ebenfalls verbreitet.
     additionalEditorconfig.set(
         mapOf(
-            // erlaubt PascalCase für Functions (Compose-freundlich)
             "ktlint_standard_function-naming" to "disabled",
-            // wenn du star-imports behalten willst:
             "ktlint_standard_no-wildcard-imports" to "disabled",
         ),
     )
@@ -75,6 +76,14 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.material)
+
+    // In-App Updates
+    implementation(libs.play.app.update.ktx)
+
+    // Firebase & Crashlytics
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.crashlytics)
+    implementation(libs.firebase.analytics)
 
     // Für einstellbare Farben
     implementation(libs.androidx.datastore.preferences)

@@ -7,6 +7,8 @@ kotlin = "2.3.10"
 lifecycleRuntimeKtx = "2.10.0"
 activityCompose = "1.12.4"
 material = "1.13.0"
+playAppUpdate = "2.1.0"
+firebaseBom = "34.9.0"
 
 [libraries]
 androidx-compose-bom-v20260101 = { module = "androidx.compose:compose-bom", version.ref = "composeBomVersion" }
@@ -20,8 +22,13 @@ coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose"
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 material = { module = "com.google.android.material:material", version.ref = "material" }
+play-app-update-ktx = { group = "com.google.android.play", name = "app-update-ktx", version.ref = "playAppUpdate" }
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+firebase-crashlytics = { group = "com.google.firebase", name = "firebase-crashlytics" }
+firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-
+firebase-crashlytics = { id = "com.google.firebase.crashlytics", version = "3.0.6" }
+google-services = { id = "com.google.gms.google-services", version = "4.4.4" }

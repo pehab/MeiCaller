@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "66101709976",
+    "project_id": "meicaller",
+    "storage_bucket": "meicaller.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:66101709976:android:65bb055b6e40c2b023d4ed",
+        "android_client_info": {
+          "package_name": "de.haberland.meicaller"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC10ExcoCFeDKLQ2k7JwNk8l9REHXxZ2gs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

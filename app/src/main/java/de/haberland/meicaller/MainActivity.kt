@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.telecom.TelecomManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
@@ -41,6 +43,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -58,6 +61,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.google.android.play.core.appupdate.AppUpdateManager
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.install.model.AppUpdateType
+import com.google.android.play.core.install.model.UpdateAvailability
 import de.haberland.meicaller.data.UiSettings
 import de.haberland.meicaller.data.UiSettingsStore
 import de.haberland.meicaller.ui.CallLogTabScreen
@@ -67,13 +74,21 @@ import de.haberland.meicaller.ui.SettingsActivity
 import de.haberland.meicaller.ui.theme.MeiCallerTheme
 
 class MainActivity : ComponentActivity() {
+    private lateinit var appUpdateManager: AppUpdateManager
+    private val updateRequestCode = 1234
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appUpdateManager = AppUpdateManagerFactory.create(this)
+        
+        checkForUpdates()
+
         setContent {
             val settings by UiSettingsStore.flow(this).collectAsState(initial = UiSettings())
             MeiCallerTheme(primaryHex = settings.primaryHex, accentHex = settings.accentHex) {
                 Surface(Modifier.fillMaxSize()) {
-                    var isConfigured by remember { mutableStateOf(false) }
+                    var isConfigured by remember { mutableStateOf(true) }
+                    var setupDismissed by remember { mutableStateOf(false) }
                     val context = LocalContext.current
 
                     fun checkConfig() {
@@ -88,12 +103,56 @@ class MainActivity : ComponentActivity() {
                         checkConfig()
                     }
 
-                    if (isConfigured) {
-                        MainScreen(settings = settings)
+                    if (!isConfigured && !setupDismissed) {
+                        SetupScreen(
+                            onConfigChanged = { checkConfig() },
+                            onDismiss = { setupDismissed = true }
+                        )
                     } else {
-                        SetupScreen(onConfigChanged = { checkConfig() })
+                        MainScreen(settings = settings)
                     }
                 }
+            }
+        }
+    }
+
+    private fun checkForUpdates() {
+        val appUpdateInfoTask = appUpdateManager.appUpdateInfo
+        appUpdateInfoTask.addOnSuccessListener { appUpdateInfo ->
+            if (appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE
+                && appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)
+            ) {
+                try {
+                    appUpdateManager.startUpdateFlowForResult(
+                        appUpdateInfo,
+                        AppUpdateType.IMMEDIATE,
+                        this,
+                        updateRequestCode
+                    )
+                } catch (_: Exception) { }
+            }
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == updateRequestCode) {
+            if (resultCode != RESULT_OK) {
+                Toast.makeText(this, "Update abgebrochen oder fehlgeschlagen", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        appUpdateManager.appUpdateInfo.addOnSuccessListener { appUpdateInfo ->
+            if (appUpdateInfo.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) {
+                appUpdateManager.startUpdateFlowForResult(
+                    appUpdateInfo,
+                    AppUpdateType.IMMEDIATE,
+                    this,
+                    updateRequestCode
+                )
             }
         }
     }
@@ -114,8 +173,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SetupScreen(onConfigChanged: () -> Unit) {
+private fun SetupScreen(onConfigChanged: () -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val REQUIRED_PERMISSIONS = MainActivity.REQUIRED_PERMISSIONS
 
@@ -144,58 +204,78 @@ private fun SetupScreen(onConfigChanged: () -> Unit) {
         onConfigChanged()
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.Warning,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.error
-        )
-        
-        Spacer(Modifier.height(24.dp))
-        
-        Text(
-            text = "Konfiguration erforderlich",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        
-        Spacer(Modifier.height(12.dp))
-        
-        Text(
-            text = "Damit MeiCaller Anrufe verwalten kann, muss die App als Standard-Telefon-App festgelegt sein und Zugriff auf deine Kontakte und Anrufe haben.",
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        
-        Spacer(Modifier.height(40.dp))
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Einrichtung") },
+                actions = {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Schließen")
+                    }
+                }
+            )
+        }
+    ) { pad ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(pad)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.error
+            )
+            
+            Spacer(Modifier.height(24.dp))
+            
+            Text(
+                text = "Konfiguration empfohlen",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Spacer(Modifier.height(12.dp))
+            
+            Text(
+                text = "Damit MeiCaller optimal funktioniert, sollte die App als Standard-Telefon-App festgelegt sein. Du kannst diesen Schritt auch überspringen, einige Funktionen sind dann aber eingeschränkt.",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            Spacer(Modifier.height(40.dp))
 
-        SetupStep(
-            title = "Berechtigungen",
-            description = "Kontakte, Anrufe und Telefonstatus",
-            isDone = hasPermissions,
-            onClick = { permissionLauncher.launch(REQUIRED_PERMISSIONS) }
-        )
+            SetupStep(
+                title = "Berechtigungen",
+                description = "Kontakte, Anrufe und Telefonstatus",
+                isDone = hasPermissions,
+                onClick = { permissionLauncher.launch(REQUIRED_PERMISSIONS) }
+            )
 
-        Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
 
-        SetupStep(
-            title = "Standard-Telefon-App",
-            description = "MeiCaller für Anrufe verwenden",
-            isDone = isDefaultDialer,
-            onClick = {
-                val roleManager = context.getSystemService(RoleManager::class.java)
-                val intent = roleManager?.createRequestRoleIntent(RoleManager.ROLE_DIALER)
-                if (intent != null) dialerLauncher.launch(intent)
+            SetupStep(
+                title = "Standard-Telefon-App",
+                description = "MeiCaller für Anrufe verwenden",
+                isDone = isDefaultDialer,
+                onClick = {
+                    val roleManager = context.getSystemService(RoleManager::class.java)
+                    val intent = roleManager?.createRequestRoleIntent(RoleManager.ROLE_DIALER)
+                    if (intent != null) dialerLauncher.launch(intent)
+                }
+            )
+
+            Spacer(Modifier.height(32.dp))
+
+            TextButton(onClick = onDismiss) {
+                Text("Später einrichten")
             }
-        )
+        }
     }
 }
 

@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.ContactsContract
 import android.telecom.TelecomManager
+import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
@@ -20,7 +21,7 @@ data class ContactInfo(
 )
 
 /**
- * Places a call using the TelecomManager if permissions allow,
+ * Places a call using the TelecomManager if the app is the default dialer,
  * otherwise falls back to showing the system dialer.
  */
 fun placeCall(
@@ -31,18 +32,27 @@ fun placeCall(
     if (cleanNumber.isEmpty()) return
 
     val uri = Uri.fromParts("tel", cleanNumber, null)
-    val dialIntent = Intent(Intent.ACTION_DIAL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val telecomManager = context.getSystemService<TelecomManager>()
+    val isDefaultDialer = telecomManager?.defaultDialerPackage == context.packageName
 
-    if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-        val telecomManager = context.getSystemService<TelecomManager>()
+    if (isDefaultDialer && ActivityCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
         try {
             telecomManager?.placeCall(uri, null)
             return
-        } catch (_: Exception) {
-            // Fallback to dial intent below
+        } catch (e: Exception) {
+            // Fallback if placeCall fails for some reason
         }
     }
-    context.startActivity(dialIntent)
+
+    // Fallback: Open system dialer
+    val dialIntent = Intent(Intent.ACTION_DIAL, uri).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(dialIntent)
+    } catch (e: Exception) {
+        Toast.makeText(context, "Anruf konnte nicht gestartet werden", Toast.LENGTH_SHORT).show()
+    }
 }
 
 /**
@@ -97,7 +107,11 @@ fun addToContacts(
             putExtra(ContactsContract.Intents.Insert.PHONE, number.trim())
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-    context.startActivity(intent)
+    try {
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        Toast.makeText(context, "Kontakte-App nicht gefunden", Toast.LENGTH_SHORT).show()
+    }
 }
 
 /**
