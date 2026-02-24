@@ -17,8 +17,8 @@ android {
         applicationId = "de.haberland.meicaller"
         minSdk = 31
         targetSdk = 36
-        versionCode = 13
-        versionName = "Prototype 13"
+        versionCode = 14
+        versionName = "Prototype 14"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
