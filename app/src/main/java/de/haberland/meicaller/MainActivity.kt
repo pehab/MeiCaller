@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.google.android.play.core.appupdate.AppUpdateManager
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.appupdate.AppUpdateOptions
 import com.google.android.play.core.install.model.AppUpdateType
 import com.google.android.play.core.install.model.UpdateAvailability
 import de.haberland.meicaller.data.UiSettings
@@ -76,7 +77,15 @@ import de.haberland.meicaller.util.markMissedCallsAsSeen
 
 class MainActivity : ComponentActivity() {
     private lateinit var appUpdateManager: AppUpdateManager
-    private val updateRequestCode = 1234
+    
+    // Modern Activity Result Launcher for App Updates
+    private val updateLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode != RESULT_OK) {
+            Toast.makeText(this, "Update abgebrochen oder fehlgeschlagen", Toast.LENGTH_SHORT).show()
+        }
+    }
     
     // State to control the selected tab from Intent
     private var initialTab = mutableStateOf(TabItem.Dialer)
@@ -142,23 +151,11 @@ class MainActivity : ComponentActivity() {
             if (appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE
                 && appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)
             ) {
-                try {
-                    appUpdateManager.startUpdateFlowForResult(
-                        appUpdateInfo,
-                        AppUpdateType.IMMEDIATE,
-                        this,
-                        updateRequestCode
-                    )
-                } catch (_: Exception) { }
-            }
-        }
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == updateRequestCode) {
-            if (resultCode != RESULT_OK) {
-                Toast.makeText(this, "Update abgebrochen oder fehlgeschlagen", Toast.LENGTH_SHORT).show()
+                appUpdateManager.startUpdateFlowForResult(
+                    appUpdateInfo,
+                    updateLauncher,
+                    AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build()
+                )
             }
         }
     }
@@ -169,9 +166,8 @@ class MainActivity : ComponentActivity() {
             if (appUpdateInfo.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) {
                 appUpdateManager.startUpdateFlowForResult(
                     appUpdateInfo,
-                    AppUpdateType.IMMEDIATE,
-                    this,
-                    updateRequestCode
+                    updateLauncher,
+                    AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build()
                 )
             }
         }
@@ -197,10 +193,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun SetupScreen(onConfigChanged: () -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val REQUIRED_PERMISSIONS = MainActivity.REQUIRED_PERMISSIONS
+    val requiredPerms = MainActivity.REQUIRED_PERMISSIONS
 
     var hasPermissions by remember {
-        mutableStateOf(REQUIRED_PERMISSIONS.all {
+        mutableStateOf(requiredPerms.all {
             ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
         })
     }
@@ -274,7 +270,7 @@ private fun SetupScreen(onConfigChanged: () -> Unit, onDismiss: () -> Unit) {
                 title = "Berechtigungen",
                 description = "Kontakte, Anrufe und Telefonstatus",
                 isDone = hasPermissions,
-                onClick = { permissionLauncher.launch(REQUIRED_PERMISSIONS) }
+                onClick = { permissionLauncher.launch(requiredPerms) }
             )
 
             Spacer(Modifier.height(16.dp))
@@ -286,7 +282,9 @@ private fun SetupScreen(onConfigChanged: () -> Unit, onDismiss: () -> Unit) {
                 onClick = {
                     val roleManager = context.getSystemService(RoleManager::class.java)
                     val intent = roleManager?.createRequestRoleIntent(RoleManager.ROLE_DIALER)
-                    if (intent != null) dialerLauncher.launch(intent)
+                    if (intent != null) {
+                        dialerLauncher.launch(intent)
+                    }
                 }
             )
 

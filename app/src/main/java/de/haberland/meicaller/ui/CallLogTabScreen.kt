@@ -328,7 +328,7 @@ private suspend fun loadCallLog(context: Context, limit: Int = 120): List<CallLo
                 ))
             }
         }
-    } catch (e: SecurityException) {
+    } catch (_: SecurityException) {
         // Fallback or log
     }
     out

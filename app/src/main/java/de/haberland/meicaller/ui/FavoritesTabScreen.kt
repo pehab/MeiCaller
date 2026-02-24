@@ -201,7 +201,7 @@ private suspend fun loadFavorites(context: Context): List<FavoriteContact> = wit
                 out.add(FavoriteContact(id, name, num, photo))
             }
         }
-    } catch (e: SecurityException) {
+    } catch (_: SecurityException) {
         // Fallback or log
     }
     out
@@ -213,7 +213,7 @@ private fun firstPhoneNumber(context: Context, id: Long): String? {
         context.contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER), sel, arrayOf(id.toString()), null)?.use { c ->
             if (c.moveToFirst()) return c.getString(0)
         }
-    } catch (e: SecurityException) {
+    } catch (_: SecurityException) {
         return null
     }
     return null

@@ -40,9 +40,9 @@ fun placeCall(
 
     if (isDefaultDialer && ActivityCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
         try {
-            telecomManager?.placeCall(uri, null)
+            telecomManager.placeCall(uri, null)
             return
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // Fallback if placeCall fails for some reason
         }
     }
@@ -53,7 +53,7 @@ fun placeCall(
     }
     try {
         context.startActivity(dialIntent)
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         Toast.makeText(context, "Anruf konnte nicht gestartet werden", Toast.LENGTH_SHORT).show()
     }
 }
