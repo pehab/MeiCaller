@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.ContactsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,12 +28,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -69,14 +72,20 @@ fun FavoritesTabScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val hasContacts = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+    var hasContacts by remember { 
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED)
+    }
+
+    val requestPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasContacts = granted
+    }
 
     val favorites by produceState(initialValue = emptyList(), hasContacts) {
         value = if (hasContacts) loadFavorites(context) else emptyList()
     }
 
     var pendingBgKey by remember { mutableStateOf<String?>(null) }
-    val pickBg = androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+    val pickBg = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         val key = pendingBgKey
         if (uri != null && !key.isNullOrBlank()) {
             try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Throwable) {}
@@ -85,31 +94,53 @@ fun FavoritesTabScreen() {
     }
 
     Column(Modifier.fillMaxSize().padding(14.dp)) {
-        Text("Favoriten", style = MaterialTheme.typography.titleLarge)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Favoriten", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            if (!hasContacts) {
+                TextButton(onClick = { requestPermission.launch(Manifest.permission.READ_CONTACTS) }) {
+                    Text("Berechtigung fehlt", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+        
         Spacer(Modifier.height(10.dp))
 
         if (!hasContacts) {
-            Text("Zugriff auf Kontakte fehlt.", modifier = Modifier.padding(16.dp))
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Zugriff auf Kontakte wird benötigt, um Favoriten anzuzeigen.", textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = { requestPermission.launch(Manifest.permission.READ_CONTACTS) }) {
+                        Text("Berechtigung erteilen")
+                    }
+                }
+            }
             return
         }
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
-            items(favorites) { f ->
-                val normalized = remember(f.number) { normalizeForCompare(f.number) }
-                val bgUri by ContactBackgroundStore.backgroundUriFlow(context, normalized).collectAsState(initial = null)
+        if (favorites.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Keine Favoriten gefunden (Sterne in Kontakten vergeben).", style = MaterialTheme.typography.bodyMedium)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
+                items(favorites) { f ->
+                    val normalized = remember(f.number) { normalizeForCompare(f.number) }
+                    val bgUri by ContactBackgroundStore.backgroundUriFlow(context, normalized).collectAsState(initial = null)
 
-                FavoriteRow(
-                    item = f,
-                    hasCustomBackground = !bgUri.isNullOrBlank(),
-                    onCall = { placeCall(context, f.number) },
-                    onSetBackground = {
-                        pendingBgKey = normalized
-                        pickBg.launch(arrayOf("image/*"))
-                    },
-                    onClearBackground = {
-                        scope.launch { ContactBackgroundStore.clearBackground(context, normalized) }
-                    },
-                )
+                    FavoriteRow(
+                        item = f,
+                        hasCustomBackground = !bgUri.isNullOrBlank(),
+                        onCall = { placeCall(context, f.number) },
+                        onSetBackground = {
+                            pendingBgKey = normalized
+                            pickBg.launch(arrayOf("image/*"))
+                        },
+                        onClearBackground = {
+                            scope.launch { ContactBackgroundStore.clearBackground(context, normalized) }
+                        },
+                    )
+                }
             }
         }
     }
@@ -160,22 +191,30 @@ private suspend fun loadFavorites(context: Context): List<FavoriteContact> = wit
     val proj = arrayOf(ContactsContract.Contacts._ID, ContactsContract.Contacts.DISPLAY_NAME, ContactsContract.Contacts.PHOTO_URI)
     val sel = "${ContactsContract.Contacts.STARRED}=1 AND ${ContactsContract.Contacts.HAS_PHONE_NUMBER}=1"
     
-    cr.query(ContactsContract.Contacts.CONTENT_URI, proj, sel, null, "${ContactsContract.Contacts.DISPLAY_NAME} COLLATE NOCASE ASC")?.use { c ->
-        while (c.moveToNext() && out.size < 200) {
-            val id = c.getLong(0)
-            val name = c.getString(1) ?: continue
-            val photo = c.getString(2)
-            val num = firstPhoneNumber(context, id) ?: continue
-            out.add(FavoriteContact(id, name, num, photo))
+    try {
+        cr.query(ContactsContract.Contacts.CONTENT_URI, proj, sel, null, "${ContactsContract.Contacts.DISPLAY_NAME} COLLATE NOCASE ASC")?.use { c ->
+            while (c.moveToNext() && out.size < 200) {
+                val id = c.getLong(0)
+                val name = c.getString(1) ?: continue
+                val photo = c.getString(2)
+                val num = firstPhoneNumber(context, id) ?: continue
+                out.add(FavoriteContact(id, name, num, photo))
+            }
         }
+    } catch (e: SecurityException) {
+        // Fallback or log
     }
     out
 }
 
 private fun firstPhoneNumber(context: Context, id: Long): String? {
     val sel = "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID}=?"
-    context.contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER), sel, arrayOf(id.toString()), null)?.use { c ->
-        if (c.moveToFirst()) return c.getString(0)
+    try {
+        context.contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER), sel, arrayOf(id.toString()), null)?.use { c ->
+            if (c.moveToFirst()) return c.getString(0)
+        }
+    } catch (e: SecurityException) {
+        return null
     }
     return null
 }

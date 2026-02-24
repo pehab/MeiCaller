@@ -85,15 +85,25 @@ fun DialerTabScreen(
     var pendingCall by remember { mutableStateOf<String?>(null) }
     var refreshSignal by remember { mutableIntStateOf(0) }
 
+    val hasCallLogPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+    val hasContactsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+
     // Listen for contact and call log changes
-    DisposableEffect(context) {
+    DisposableEffect(context, hasCallLogPermission, hasContactsPermission) {
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 refreshSignal++
             }
         }
-        context.contentResolver.registerContentObserver(ContactsContract.Contacts.CONTENT_URI, true, observer)
-        context.contentResolver.registerContentObserver(CallLog.Calls.CONTENT_URI, true, observer)
+        
+        // Only register if we have permission, otherwise SecurityException occurs
+        if (hasContactsPermission) {
+            context.contentResolver.registerContentObserver(ContactsContract.Contacts.CONTENT_URI, true, observer)
+        }
+        if (hasCallLogPermission) {
+            context.contentResolver.registerContentObserver(CallLog.Calls.CONTENT_URI, true, observer)
+        }
+
         onDispose {
             context.contentResolver.unregisterContentObserver(observer)
         }
@@ -118,9 +128,6 @@ fun DialerTabScreen(
             requestCallPermission.launch(Manifest.permission.CALL_PHONE)
         }
     }
-
-    val hasCallLogPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
-    val hasContactsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
 
     val suggestions by produceState(initialValue = emptyList(), number, hasCallLogPermission, hasContactsPermission, refreshSignal) {
         value = loadSuggestions(context, number, hasCallLogPermission, hasContactsPermission)

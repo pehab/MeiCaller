@@ -17,8 +17,8 @@ android {
         applicationId = "de.haberland.meicaller"
         minSdk = 31
         targetSdk = 36
-        versionCode = 12
-        versionName = "Prototype 12 (Crashlytics)"
+        versionCode = 13
+        versionName = "Prototype 13"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -64,8 +64,8 @@ detekt {
 kotlin { jvmToolchain(17) }
 
 dependencies {
-    implementation(platform(libs.androidx.compose.bom.v20260101))
-    androidTestImplementation(platform(libs.androidx.compose.bom.v20260101))
+    implementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(platform(libs.androidx.compose.bom))
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.ui)

@@ -65,8 +65,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -261,6 +263,24 @@ private fun InCallScreen(
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(40.dp))
         
+        // Text style with shadow for better readability on backgrounds
+        val textWithShadow = MaterialTheme.typography.headlineLarge.copy(
+            color = Color.White,
+            shadow = Shadow(
+                color = Color.Black,
+                offset = Offset(2f, 2f),
+                blurRadius = 4f
+            )
+        )
+        val secondaryTextWithShadow = MaterialTheme.typography.titleMedium.copy(
+            color = Color.White.copy(alpha = 0.85f),
+            shadow = Shadow(
+                color = Color.Black,
+                offset = Offset(1f, 1f),
+                blurRadius = 3f
+            )
+        )
+
         // Caller Info Section
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.size(140.dp).clip(CircleShape).border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), CircleShape)) {
@@ -277,9 +297,17 @@ private fun InCallScreen(
             
             Spacer(Modifier.height(24.dp))
             
-            Text(displayName ?: number ?: "Unbekannt", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text(
+                text = displayName ?: number ?: "Unbekannt",
+                style = textWithShadow.copy(fontWeight = FontWeight.Bold),
+                textAlign = TextAlign.Center
+            )
             if (!number.isNullOrBlank()) {
-                Text(number ?: "", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    text = number ?: "",
+                    style = secondaryTextWithShadow,
+                    textAlign = TextAlign.Center
+                )
             }
             
             Spacer(Modifier.height(12.dp))
@@ -294,7 +322,13 @@ private fun InCallScreen(
                     Call.STATE_DISCONNECTED -> "Beendet" to MaterialTheme.colorScheme.error
                     else -> "" to MaterialTheme.colorScheme.onSurface
                 }
-                Text(txt, style = MaterialTheme.typography.headlineSmall, color = color)
+                Text(
+                    text = txt,
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        color = color,
+                        shadow = Shadow(color = Color.Black.copy(alpha = 0.5f), offset = Offset(1f, 1f), blurRadius = 2f)
+                    )
+                )
             }
         }
 

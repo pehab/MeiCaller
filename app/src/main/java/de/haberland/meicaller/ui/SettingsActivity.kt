@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
 import androidx.lifecycle.lifecycleScope
 import coil.compose.AsyncImage
+import de.haberland.meicaller.BuildConfig
 import de.haberland.meicaller.R
 import de.haberland.meicaller.data.UiSettings
 import de.haberland.meicaller.data.UiSettingsStore
@@ -198,6 +199,17 @@ private fun SettingsScreen(
                     )
                 }
             }
+
+            // Version Info
+            Spacer(Modifier.height(16.dp))
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+            Spacer(Modifier.height(16.dp))
         }
     }
 }

@@ -4,8 +4,13 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.database.ContentObserver
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.provider.CallLog
+import android.provider.ContactsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,6 +37,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -38,6 +45,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -87,11 +95,18 @@ fun CallLogTabScreen() {
     val scope = rememberCoroutineScope()
     val settings by UiSettingsStore.flow(context).collectAsState(initial = null)
 
-    val hasCallLog = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+    var hasCallLog by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED)
+    }
     val hasContacts = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+
+    val requestPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasCallLog = granted
+    }
 
     var refreshTrigger by remember { mutableIntStateOf(0) }
 
+    // Update on lifecycle resume
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -101,12 +116,30 @@ fun CallLogTabScreen() {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // Update when contacts or call log changes
+    DisposableEffect(context, hasCallLog, hasContacts) {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                refreshTrigger++
+            }
+        }
+        if (hasCallLog) {
+            context.contentResolver.registerContentObserver(CallLog.Calls.CONTENT_URI, true, observer)
+        }
+        if (hasContacts) {
+            context.contentResolver.registerContentObserver(ContactsContract.Contacts.CONTENT_URI, true, observer)
+        }
+        onDispose {
+            context.contentResolver.unregisterContentObserver(observer)
+        }
+    }
+
     val calls by produceState(initialValue = emptyList(), hasCallLog, hasContacts, refreshTrigger) {
         value = if (hasCallLog) loadCallLog(context) else emptyList()
     }
 
     var pendingBgKey by remember { mutableStateOf<String?>(null) }
-    val pickBg = androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+    val pickBg = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         val key = pendingBgKey
         if (uri != null && !key.isNullOrBlank()) {
             try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Throwable) {}
@@ -122,35 +155,54 @@ fun CallLogTabScreen() {
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Anrufliste", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            if (!hasCallLog) {
+                TextButton(onClick = { requestPermission.launch(Manifest.permission.READ_CALL_LOG) }) {
+                    Text("Berechtigung fehlt", style = MaterialTheme.typography.labelSmall)
+                }
+            }
             IconButton(onClick = { refreshTrigger++ }) { Icon(Icons.Filled.Refresh, contentDescription = null) }
         }
 
         if (!hasCallLog) {
-            Text("Berechtigung für Anrufliste fehlt.", modifier = Modifier.padding(16.dp))
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Berechtigung für Anrufliste fehlt.", textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = { requestPermission.launch(Manifest.permission.READ_CALL_LOG) }) {
+                        Text("Berechtigung erteilen")
+                    }
+                }
+            }
             return
         }
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
-            items(calls) { item ->
-                val normalized = remember(item.number) { normalizeForCompare(item.number) }
-                val bgUri by if (item.numberVisible) {
-                    ContactBackgroundStore.backgroundUriFlow(context, normalized).collectAsState(initial = null)
-                } else remember { mutableStateOf(null) }
+        if (calls.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Anrufliste ist leer.", style = MaterialTheme.typography.bodyMedium)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
+                items(calls) { item ->
+                    val normalized = remember(item.number) { normalizeForCompare(item.number) }
+                    val bgUri by if (item.numberVisible) {
+                        ContactBackgroundStore.backgroundUriFlow(context, normalized).collectAsState(initial = null)
+                    } else remember { mutableStateOf(null) }
 
-                CallLogRow(
-                    item = item,
-                    accentColor = accentColor,
-                    hasCustomBackground = !bgUri.isNullOrBlank(),
-                    onCall = { if (item.numberVisible) placeCall(context, item.number) },
-                    onAddContact = { addToContacts(context, item.number) },
-                    onSetBackground = {
-                        pendingBgKey = normalized
-                        pickBg.launch(arrayOf("image/*"))
-                    },
-                    onClearBackground = {
-                        scope.launch { ContactBackgroundStore.clearBackground(context, normalized) }
-                    },
-                )
+                    CallLogRow(
+                        item = item,
+                        accentColor = accentColor,
+                        hasCustomBackground = !bgUri.isNullOrBlank(),
+                        onCall = { if (item.numberVisible) placeCall(context, item.number) },
+                        onAddContact = { addToContacts(context, item.number) },
+                        onSetBackground = {
+                            pendingBgKey = normalized
+                            pickBg.launch(arrayOf("image/*"))
+                        },
+                        onClearBackground = {
+                            scope.launch { ContactBackgroundStore.clearBackground(context, normalized) }
+                        },
+                    )
+                }
             }
         }
     }
@@ -231,44 +283,53 @@ private suspend fun loadCallLog(context: Context, limit: Int = 120): List<CallLo
         CallLog.Calls.NUMBER_PRESENTATION
     )
 
-    context.contentResolver.query(
-        CallLog.Calls.CONTENT_URI,
-        projection,
-        null, null, "${CallLog.Calls.DATE} DESC"
-    )?.use { c ->
-        val nameIdx = c.getColumnIndex(CallLog.Calls.CACHED_NAME)
-        val numIdx = c.getColumnIndex(CallLog.Calls.NUMBER)
-        val dateIdx = c.getColumnIndex(CallLog.Calls.DATE)
-        val typeIdx = c.getColumnIndex(CallLog.Calls.TYPE)
-        val presIdx = c.getColumnIndex(CallLog.Calls.NUMBER_PRESENTATION)
+    try {
+        context.contentResolver.query(
+            CallLog.Calls.CONTENT_URI,
+            projection,
+            null, null, "${CallLog.Calls.DATE} DESC"
+        )?.use { c ->
+            val nameIdx = c.getColumnIndex(CallLog.Calls.CACHED_NAME)
+            val numIdx = c.getColumnIndex(CallLog.Calls.NUMBER)
+            val dateIdx = c.getColumnIndex(CallLog.Calls.DATE)
+            val typeIdx = c.getColumnIndex(CallLog.Calls.TYPE)
+            val presIdx = c.getColumnIndex(CallLog.Calls.NUMBER_PRESENTATION)
 
-        while (c.moveToNext() && out.size < limit) {
-            val presentation = if (presIdx != -1) c.getInt(presIdx) else CallLog.Calls.PRESENTATION_ALLOWED
-            val num = c.getString(numIdx) ?: ""
-            val name = if (nameIdx != -1) c.getString(nameIdx)?.takeIf { it.isNotBlank() } else null
-            
-            val isVisible = presentation == CallLog.Calls.PRESENTATION_ALLOWED && num.isNotBlank()
-            
-            val finalName = when {
-                !isVisible -> when (presentation) {
-                    CallLog.Calls.PRESENTATION_RESTRICTED -> "Private Nummer"
-                    CallLog.Calls.PRESENTATION_PAYPHONE -> "Öffentliches Telefon"
-                    else -> "Unbekannte Nummer"
+            while (c.moveToNext() && out.size < limit) {
+                val presentation = if (presIdx != -1) c.getInt(presIdx) else CallLog.Calls.PRESENTATION_ALLOWED
+                val num = c.getString(numIdx) ?: ""
+                val cachedName = if (nameIdx != -1) c.getString(nameIdx)?.takeIf { it.isNotBlank() } else null
+                
+                val isVisible = presentation == CallLog.Calls.PRESENTATION_ALLOWED && num.isNotBlank()
+                
+                // Real-time contact check to fix Bug 2
+                val realName = if (isVisible && hasReadContacts) {
+                    getContactName(context, num)
+                } else null
+
+                val finalName = when {
+                    !isVisible -> when (presentation) {
+                        CallLog.Calls.PRESENTATION_RESTRICTED -> "Private Nummer"
+                        CallLog.Calls.PRESENTATION_PAYPHONE -> "Öffentliches Telefon"
+                        else -> "Unbekannte Nummer"
+                    }
+                    realName != null -> realName
+                    cachedName != null -> cachedName
+                    else -> num
                 }
-                name != null -> name
-                hasReadContacts -> getContactName(context, num) ?: num
-                else -> num
-            }
 
-            out.add(CallLogItem(
-                nameOrNumber = finalName,
-                number = if (isVisible) num else "",
-                dateMillis = c.getLong(dateIdx),
-                type = c.getInt(typeIdx),
-                isContact = name != null || (!isVisible),
-                numberVisible = isVisible
-            ))
+                out.add(CallLogItem(
+                    nameOrNumber = finalName,
+                    number = if (isVisible) num else "",
+                    dateMillis = c.getLong(dateIdx),
+                    type = c.getInt(typeIdx),
+                    isContact = realName != null || cachedName != null || (!isVisible),
+                    numberVisible = isVisible
+                ))
+            }
         }
+    } catch (e: SecurityException) {
+        // Fallback or log
     }
     out
 }

@@ -72,16 +72,21 @@ import de.haberland.meicaller.ui.DialerTabScreen
 import de.haberland.meicaller.ui.FavoritesTabScreen
 import de.haberland.meicaller.ui.SettingsActivity
 import de.haberland.meicaller.ui.theme.MeiCallerTheme
+import de.haberland.meicaller.util.markMissedCallsAsSeen
 
 class MainActivity : ComponentActivity() {
     private lateinit var appUpdateManager: AppUpdateManager
     private val updateRequestCode = 1234
+    
+    // State to control the selected tab from Intent
+    private var initialTab = mutableStateOf(TabItem.Dialer)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appUpdateManager = AppUpdateManagerFactory.create(this)
         
         checkForUpdates()
+        handleIntent(intent)
 
         setContent {
             val settings by UiSettingsStore.flow(this).collectAsState(initial = UiSettings())
@@ -109,10 +114,25 @@ class MainActivity : ComponentActivity() {
                             onDismiss = { setupDismissed = true }
                         )
                     } else {
-                        MainScreen(settings = settings)
+                        MainScreen(settings = settings, forcedTab = initialTab.value)
                     }
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent == null) return
+        
+        // If the intent is to view calls (missed call notification)
+        if (Intent.ACTION_VIEW == intent.action && intent.type == "vnd.android.cursor.dir/calls") {
+            initialTab.value = TabItem.CallLog
+            markMissedCallsAsSeen(this)
         }
     }
 
@@ -322,9 +342,14 @@ private enum class TabItem(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MainScreen(settings: UiSettings) {
+private fun MainScreen(settings: UiSettings, forcedTab: TabItem) {
     val context = LocalContext.current
-    var selectedTab by remember { mutableStateOf(TabItem.Dialer) }
+    var selectedTab by remember { mutableStateOf(forcedTab) }
+    
+    // Update selectedTab if forcedTab changes (e.g. from onNewIntent)
+    LaunchedEffect(forcedTab) {
+        selectedTab = forcedTab
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,

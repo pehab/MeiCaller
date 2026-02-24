@@ -1,12 +1,15 @@
 package de.haberland.meicaller.util
 
 import android.Manifest
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.CallLog
 import android.provider.ContactsContract
 import android.telecom.TelecomManager
+import android.util.Log
 import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.content.getSystemService
@@ -119,4 +122,40 @@ fun addToContacts(
  */
 fun normalizeForCompare(number: String): String {
     return number.filter { it.isDigit() }
+}
+
+/**
+ * Marks all "new" missed calls as "seen/read" in the system call log.
+ * Required WRITE_CALL_LOG permission.
+ */
+fun markMissedCallsAsSeen(context: Context) {
+    if (ActivityCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALL_LOG) != PackageManager.PERMISSION_GRANTED) {
+        return
+    }
+    
+    val cr = context.contentResolver
+    try {
+        // Mark as 'not new'
+        val valuesNew = ContentValues().apply { put(CallLog.Calls.NEW, 0) }
+        cr.update(
+            CallLog.Calls.CONTENT_URI,
+            valuesNew,
+            "${CallLog.Calls.TYPE}=? AND ${CallLog.Calls.NEW}=?",
+            arrayOf(CallLog.Calls.MISSED_TYPE.toString(), "1"),
+        )
+
+        // Mark as 'read'
+        val valuesRead = ContentValues().apply { put("is_read", 1) }
+        cr.update(
+            CallLog.Calls.CONTENT_URI,
+            valuesRead,
+            "${CallLog.Calls.TYPE}=? AND (is_read=0 OR is_read IS NULL)",
+            arrayOf(CallLog.Calls.MISSED_TYPE.toString()),
+        )
+
+        // Notify providers to update system UI
+        cr.notifyChange(CallLog.Calls.CONTENT_URI, null)
+    } catch (t: Throwable) {
+        Log.w("MeiCaller", "markMissedCallsAsSeen failed: ${t.message}")
+    }
 }
