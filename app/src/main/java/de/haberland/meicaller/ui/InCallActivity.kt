@@ -359,7 +359,7 @@ private fun InCallScreen(
                                 // Swap Button for Call Waiting
                                 InCallToggle(icon = Icons.Default.SwapCalls, active = false, accentColor = accentColor, onClick = {
                                     val other = allCalls.firstOrNull { it != call }
-                                    if (other?.state == Call.STATE_HOLDING) {
+                                    if (other?.details?.state == Call.STATE_HOLDING) {
                                         other.unhold()
                                     } else {
                                         call.hold()
