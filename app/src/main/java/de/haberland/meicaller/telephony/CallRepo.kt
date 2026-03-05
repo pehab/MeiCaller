@@ -15,87 +15,97 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.lang.ref.WeakReference
 
 /**
- * A thread-safe singleton repository to hold and manage the global call state.
- * This object centralizes the active `Call` and `InCallService` instances,
- * using WeakReferences to prevent memory leaks.
- * It provides reactive state flows for UI components to observe call status (e.g., mute, audio route).
+ * A thread-safe singleton repository to hold and manage global call states.
+ * Supports multiple active calls (e.g., for Call Waiting).
  */
 object CallRepo {
-    @Volatile private var callRef: WeakReference<Call>? = null
+    private val mutableCalls = MutableStateFlow<List<Call>>(emptyList())
+    val calls: StateFlow<List<Call>> = mutableCalls.asStateFlow()
+
     @Volatile private var serviceRef: WeakReference<InCallService>? = null
 
     // ---- Public UI state ----
 
-    /** Flow representing the current mute state of the call. */
     private val mutableIsMuted = MutableStateFlow(false)
     val isMuted: StateFlow<Boolean> = mutableIsMuted.asStateFlow()
 
-    /** Flow representing the currently active audio endpoint (e.g., Speaker, Earpiece). API 34+ only. */
     private val mutableCurrentEndpoint = MutableStateFlow<CallEndpoint?>(null)
     val currentEndpoint: StateFlow<CallEndpoint?> = mutableCurrentEndpoint.asStateFlow()
 
     private val mutableAvailableEndpoints = MutableStateFlow<List<CallEndpoint>>(emptyList())
 
-    /** Flow representing the legacy audio route. Used on API < 34. */
     private val mutableLegacyAudioRoute = MutableStateFlow(CallAudioState.ROUTE_EARPIECE)
     val legacyAudioRoute: StateFlow<Int> = mutableLegacyAudioRoute.asStateFlow()
 
     // ---- Lifecycle Management ----
 
-    /** Sets the active InCallService instance and refreshes the audio state. */
     fun setService(service: InCallService) {
         serviceRef = WeakReference(service)
         refreshFromService(service)
     }
 
-    /** Clears the service reference if it matches the provided instance. */
     fun clearService(service: InCallService) {
-        val current = serviceRef?.get()
-        if (current === service) serviceRef = null
+        if (serviceRef?.get() === service) serviceRef = null
     }
 
-    /** Sets the active call instance. */
-    fun setCall(call: Call) {
-        callRef = WeakReference(call)
+    /** Adds or updates a call in the list. */
+    fun addOrUpdateCall(call: Call) {
+        val currentList = mutableCalls.value.toMutableList()
+        if (!currentList.contains(call)) {
+            currentList.add(call)
+            mutableCalls.value = currentList
+        }
     }
 
-    /** Clears the call reference if it matches the provided instance. */
-    fun clearIfSame(call: Call) {
-        val current = callRef?.get()
-        if (current === call) callRef = null
+    /** Removes a call from the list. */
+    fun removeCall(call: Call) {
+        val currentList = mutableCalls.value.toMutableList()
+        if (currentList.remove(call)) {
+            mutableCalls.value = currentList
+        }
     }
 
-    /** Returns the current Call instance, or null if not available. */
-    fun call(): Call? = callRef?.get()
+    /** Helper to get the "primary" call (usually the active one or the newest incoming one). */
+    fun getPrimaryCall(): Call? {
+        val list = mutableCalls.value
+        if (list.isEmpty()) return null
+        
+        // Prefer ringing call if exists, else active, else first in list
+        return list.find { getCallState(it) == Call.STATE_RINGING }
+            ?: list.find { getCallState(it) == Call.STATE_ACTIVE }
+            ?: list.firstOrNull()
+    }
 
-    /** Returns the current InCallService instance, or null if not available. */
+    /** 
+     * Helper to get the state of a call. 
+     * it.state is deprecated in favor of it.details.state.
+     */
+    private fun getCallState(call: Call): Int {
+        return call.details?.state ?: Call.STATE_NEW
+    }
+
     fun service(): InCallService? = serviceRef?.get()
 
-    // ---- Service -> Repo Updates (called from MyInCallService) ----
+    // ---- Service -> Repo Updates ----
 
-    /** Called by the service when the mute state changes. */
     fun onMuteStateChanged(isMuted: Boolean) {
         mutableIsMuted.value = isMuted
     }
 
-    /** Called by the service when the current audio endpoint changes (API 34+). */
     fun onCurrentEndpointChanged(endpoint: CallEndpoint?) {
         mutableCurrentEndpoint.value = endpoint
     }
 
-    /** Called by the service when the list of available endpoints changes (API 34+). */
     fun onAvailableEndpointsChanged(endpoints: List<CallEndpoint>) {
         mutableAvailableEndpoints.value = endpoints
     }
 
-    /**
-     * Refreshes the initial audio state from the service.
-     * This uses the modern CallEndpoint API on 34+ and falls back to the deprecated CallAudioState on older versions.
-     */
     fun refreshFromService(service: InCallService) {
+        // Sync the call list from the service's internal list
+        mutableCalls.value = service.calls ?: emptyList()
+
         if (Build.VERSION.SDK_INT >= 34) {
             mutableCurrentEndpoint.value = service.currentCallEndpoint
-            // available endpoints come ONLY via onAvailableCallEndpointsChanged callback
         } else {
             @Suppress("DEPRECATION")
             val cas = service.callAudioState
@@ -106,20 +116,12 @@ object CallRepo {
 
     // ---- UI Commands ----
 
-    /** Sets the mute state on the InCallService. */
-    fun setMuted(
-        service: InCallService,
-        muted: Boolean,
-    ) {
+    fun setMuted(service: InCallService, muted: Boolean) {
         service.setMuted(muted)
         mutableIsMuted.value = muted
     }
 
-    /** Toggles the speakerphone on or off, handling API level differences. */
-    fun toggleSpeaker(
-        context: Context,
-        service: InCallService,
-    ) {
+    fun toggleSpeaker(context: Context, service: InCallService) {
         if (Build.VERSION.SDK_INT >= 34) {
             toggleSpeakerApi34(context, service)
         } else {
@@ -127,12 +129,8 @@ object CallRepo {
         }
     }
 
-    /** Toggles speakerphone using the modern CallEndpoint API (34+). */
     @androidx.annotation.RequiresApi(34)
-    private fun toggleSpeakerApi34(
-        context: Context,
-        service: InCallService,
-    ) {
+    private fun toggleSpeakerApi34(context: Context, service: InCallService) {
         val current = mutableCurrentEndpoint.value ?: service.currentCallEndpoint
         val available = mutableAvailableEndpoints.value
         if (available.isEmpty()) return
@@ -144,36 +142,26 @@ object CallRepo {
         }
         val target = available.firstOrNull { it.endpointType == targetType } ?: return
 
-        val executor = ContextCompat.getMainExecutor(context)
-
         service.requestCallEndpointChange(
             target,
-            executor,
+            ContextCompat.getMainExecutor(context),
             object : OutcomeReceiver<Void, CallEndpointException> {
-                override fun onResult(result: Void?) {
-                    refreshFromService(service)
-                }
-
-                override fun onError(error: CallEndpointException) {
-                    // ignore (optional: log)
-                }
+                override fun onResult(result: Void?) { refreshFromService(service) }
+                override fun onError(error: CallEndpointException) {}
             },
         )
     }
 
-    /** Toggles speakerphone using the legacy setAudioRoute API (< 34). */
     private fun toggleSpeakerLegacy(service: InCallService) {
-        val current = mutableLegacyAudioRoute.value
-        val newRoute =
-            if (current == CallAudioState.ROUTE_SPEAKER) {
-                CallAudioState.ROUTE_EARPIECE
-            } else {
-                CallAudioState.ROUTE_SPEAKER
-            }
-
+        @Suppress("DEPRECATION")
+        val current = service.callAudioState?.route ?: CallAudioState.ROUTE_EARPIECE
+        val newRoute = if (current == CallAudioState.ROUTE_SPEAKER) {
+            CallAudioState.ROUTE_EARPIECE
+        } else {
+            CallAudioState.ROUTE_SPEAKER
+        }
         @Suppress("DEPRECATION")
         service.setAudioRoute(newRoute)
-
         mutableLegacyAudioRoute.value = newRoute
     }
 }

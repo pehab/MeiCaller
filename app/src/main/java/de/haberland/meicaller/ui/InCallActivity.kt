@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.SwapCalls
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -139,6 +140,11 @@ class InCallActivity : ComponentActivity() {
 @Composable
 private fun InCallRoot(settings: UiSettings, onFinish: () -> Unit, onCallStateChanged: (Int) -> Unit) {
     val context = LocalContext.current
+    val allCalls by CallRepo.calls.collectAsState()
+    
+    // We display the primary call but keep track of all calls
+    val primaryCall = remember(allCalls) { CallRepo.getPrimaryCall() }
+    
     var liveNumber by remember { mutableStateOf<String?>(null) }
     val normalized = remember(liveNumber) { liveNumber?.let { normalizeForCompare(it) }.orEmpty() }
 
@@ -159,19 +165,27 @@ private fun InCallRoot(settings: UiSettings, onFinish: () -> Unit, onCallStateCh
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f)))))
         }
 
-        InCallScreen(
-            settings = settings,
-            onFinish = onFinish,
-            onNumberObserved = { liveNumber = it },
-            onCallStateChanged = onCallStateChanged,
-            modifier = Modifier.fillMaxSize().systemBarsPadding().navigationBarsPadding().padding(24.dp)
-        )
+        if (primaryCall == null) {
+            LaunchedEffect(Unit) { onFinish() }
+        } else {
+            InCallScreen(
+                call = primaryCall,
+                allCalls = allCalls,
+                settings = settings,
+                onFinish = onFinish,
+                onNumberObserved = { liveNumber = it },
+                onCallStateChanged = onCallStateChanged,
+                modifier = Modifier.fillMaxSize().systemBarsPadding().navigationBarsPadding().padding(24.dp)
+            )
+        }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun InCallScreen(
+    call: Call,
+    allCalls: List<Call>,
     settings: UiSettings,
     onFinish: () -> Unit,
     onNumberObserved: (String?) -> Unit,
@@ -179,7 +193,6 @@ private fun InCallScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val call = remember { CallRepo.call() }
     val service = remember { CallRepo.service() }
     val isMuted by CallRepo.isMuted.collectAsState()
     val currentEndpoint by CallRepo.currentEndpoint.collectAsState()
@@ -188,17 +201,17 @@ private fun InCallScreen(
     val isSpeaker = if (Build.VERSION.SDK_INT >= 34) currentEndpoint?.endpointType == CallEndpoint.TYPE_SPEAKER
                     else legacyRoute == CallAudioState.ROUTE_SPEAKER
 
-    if (call == null || service == null) {
+    if (service == null) {
         onFinish()
         return
     }
 
-    var callState by remember { mutableIntStateOf(call.details?.state ?: Call.STATE_NEW) }
-    var displayName by remember { mutableStateOf<String?>(null) }
-    var number by remember { mutableStateOf<String?>(null) }
-    var contactPhotoUri by remember { mutableStateOf<String?>(null) }
+    var callState by remember(call) { mutableIntStateOf(call.details?.state ?: Call.STATE_NEW) }
+    var displayName by remember(call) { mutableStateOf<String?>(null) }
+    var number by remember(call) { mutableStateOf<String?>(null) }
+    var contactPhotoUri by remember(call) { mutableStateOf<String?>(null) }
     var showDtmf by remember { mutableStateOf(false) }
-    var durationSeconds by remember { mutableLongStateOf(0L) }
+    var durationSeconds by remember(call) { mutableLongStateOf(0L) }
 
     val accentColor = remember(settings.accentHex) {
         try { Color(settings.accentHex.toColorInt()) }
@@ -248,7 +261,7 @@ private fun InCallScreen(
 
     LaunchedEffect(callState) {
         onCallStateChanged(callState)
-        if (callState == Call.STATE_DISCONNECTED) {
+        if (callState == Call.STATE_DISCONNECTED && allCalls.size <= 1) {
             delay(1200)
             onFinish()
         }
@@ -263,25 +276,33 @@ private fun InCallScreen(
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(40.dp))
         
-        // Text style with shadow for better readability on backgrounds
+        // --- Call Waiting Info ---
+        if (allCalls.size > 1) {
+            val otherCall = allCalls.firstOrNull { it != call }
+            if (otherCall != null) {
+                Surface(
+                    modifier = Modifier.padding(bottom = 16.dp),
+                    shape = CircleShape,
+                    color = Color.White.copy(alpha = 0.2f)
+                ) {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.SwapCalls, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text("Weiterer Anruf aktiv", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
+
         val textWithShadow = MaterialTheme.typography.headlineLarge.copy(
             color = Color.White,
-            shadow = Shadow(
-                color = Color.Black,
-                offset = Offset(2f, 2f),
-                blurRadius = 4f
-            )
+            shadow = Shadow(color = Color.Black, offset = Offset(2f, 2f), blurRadius = 4f)
         )
         val secondaryTextWithShadow = MaterialTheme.typography.titleMedium.copy(
             color = Color.White.copy(alpha = 0.85f),
-            shadow = Shadow(
-                color = Color.Black,
-                offset = Offset(1f, 1f),
-                blurRadius = 3f
-            )
+            shadow = Shadow(color = Color.Black, offset = Offset(1f, 1f), blurRadius = 3f)
         )
 
-        // Caller Info Section
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.size(140.dp).clip(CircleShape).border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), CircleShape)) {
                 if (!contactPhotoUri.isNullOrBlank()) {
@@ -297,17 +318,9 @@ private fun InCallScreen(
             
             Spacer(Modifier.height(24.dp))
             
-            Text(
-                text = displayName ?: number ?: "Unbekannt",
-                style = textWithShadow.copy(fontWeight = FontWeight.Bold),
-                textAlign = TextAlign.Center
-            )
+            Text(text = displayName ?: number ?: "Unbekannt", style = textWithShadow.copy(fontWeight = FontWeight.Bold), textAlign = TextAlign.Center)
             if (!number.isNullOrBlank()) {
-                Text(
-                    text = number ?: "",
-                    style = secondaryTextWithShadow,
-                    textAlign = TextAlign.Center
-                )
+                Text(text = number ?: "", style = secondaryTextWithShadow, textAlign = TextAlign.Center)
             }
             
             Spacer(Modifier.height(12.dp))
@@ -322,74 +335,41 @@ private fun InCallScreen(
                     Call.STATE_DISCONNECTED -> "Beendet" to MaterialTheme.colorScheme.error
                     else -> "" to MaterialTheme.colorScheme.onSurface
                 }
-                Text(
-                    text = txt,
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        color = color,
-                        shadow = Shadow(color = Color.Black.copy(alpha = 0.5f), offset = Offset(1f, 1f), blurRadius = 2f)
-                    )
-                )
+                Text(text = txt, style = MaterialTheme.typography.headlineSmall.copy(color = color, shadow = Shadow(color = Color.Black.copy(alpha = 0.5f), offset = Offset(1f, 1f), blurRadius = 2f)))
             }
         }
 
         Spacer(Modifier.weight(1f))
 
-        // Controls Section
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
             when (callState) {
                 Call.STATE_RINGING -> {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(40.dp, Alignment.CenterHorizontally)) {
-                        CallActionButton(
-                            imageUri = settings.rejectButtonUri, 
-                            icon = Icons.Filled.CallEnd, 
-                            color = Color(0xFFF44336), 
-                            label = "Ablehnen", 
-                            size = 112, 
-                            onClick = { call.disconnect() }
-                        )
-                        CallActionButton(
-                            imageUri = settings.acceptButtonUri, 
-                            icon = Icons.Filled.Mic, 
-                            color = Color(0xFF4CAF50), 
-                            label = "Annehmen", 
-                            size = 112, 
-                            onClick = { call.answer(VideoProfile.STATE_AUDIO_ONLY) }
-                        )
+                        CallActionButton(imageUri = settings.rejectButtonUri, icon = Icons.Filled.CallEnd, color = Color(0xFFF44336), label = "Ablehnen", size = 112, onClick = { call.disconnect() })
+                        CallActionButton(imageUri = settings.acceptButtonUri, icon = Icons.Filled.Mic, color = Color(0xFF4CAF50), label = "Annehmen", size = 112, onClick = { call.answer(VideoProfile.STATE_AUDIO_ONLY) })
                     }
-                }
-                Call.STATE_DISCONNECTED -> {
-                    // Controls ausblenden bei Disconnect
                 }
                 else -> {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally)) {
-                            InCallToggle(
-                                icon = if (isMuted) Icons.Filled.MicOff else Icons.Filled.Mic, 
-                                active = isMuted, 
-                                accentColor = accentColor,
-                                onClick = { CallRepo.setMuted(service, !isMuted) }
-                            )
-                            InCallToggle(
-                                icon = if (isSpeaker) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff, 
-                                active = isSpeaker, 
-                                accentColor = accentColor,
-                                onClick = { CallRepo.toggleSpeaker(context, service) }
-                            )
-                            InCallToggle(
-                                icon = Icons.Filled.Dialpad, 
-                                active = showDtmf, 
-                                accentColor = accentColor,
-                                onClick = { showDtmf = true }
-                            )
+                            InCallToggle(icon = if (isMuted) Icons.Filled.MicOff else Icons.Filled.Mic, active = isMuted, accentColor = accentColor, onClick = { CallRepo.setMuted(service, !isMuted) })
+                            InCallToggle(icon = if (isSpeaker) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff, active = isSpeaker, accentColor = accentColor, onClick = { CallRepo.toggleSpeaker(context, service) })
+                            
+                            if (allCalls.size > 1) {
+                                // Swap Button for Call Waiting
+                                InCallToggle(icon = Icons.Default.SwapCalls, active = false, accentColor = accentColor, onClick = {
+                                    val other = allCalls.firstOrNull { it != call }
+                                    if (other?.state == Call.STATE_HOLDING) {
+                                        other.unhold()
+                                    } else {
+                                        call.hold()
+                                    }
+                                })
+                            } else {
+                                InCallToggle(icon = Icons.Filled.Dialpad, active = showDtmf, accentColor = accentColor, onClick = { showDtmf = true })
+                            }
                         }
-                        CallActionButton(
-                            imageUri = settings.rejectButtonUri, 
-                            icon = Icons.Filled.CallEnd, 
-                            color = Color(0xFFF44336), 
-                            label = "Auflegen", 
-                            size = 112, 
-                            onClick = { call.disconnect() }
-                        )
+                        CallActionButton(imageUri = settings.rejectButtonUri, icon = Icons.Filled.CallEnd, color = Color(0xFFF44336), label = "Auflegen", size = 112, onClick = { call.disconnect() })
                     }
                 }
             }
@@ -399,52 +379,19 @@ private fun InCallScreen(
 }
 
 @Composable
-private fun InCallToggle(
-    icon: androidx.compose.ui.graphics.vector.ImageVector, 
-    active: Boolean, 
-    accentColor: Color,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.size(64.dp),
-        shape = CircleShape,
-        color = if (active) accentColor else Color.White.copy(alpha = 0.15f),
-        border = if (!active) androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)) else null
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
-        }
+private fun InCallToggle(icon: androidx.compose.ui.graphics.vector.ImageVector, active: Boolean, accentColor: Color, onClick: () -> Unit) {
+    Surface(onClick = onClick, modifier = Modifier.size(64.dp), shape = CircleShape, color = if (active) accentColor else Color.White.copy(alpha = 0.15f), border = if (!active) androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)) else null) {
+        Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp)) }
     }
 }
 
 @Composable
-private fun CallActionButton(
-    imageUri: String? = null, 
-    icon: androidx.compose.ui.graphics.vector.ImageVector, 
-    color: Color, 
-    label: String, 
-    size: Int = 112, 
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.size(size.dp),
-        shape = CircleShape,
-        color = color,
-        tonalElevation = 8.dp
-    ) {
+private fun CallActionButton(imageUri: String? = null, icon: androidx.compose.ui.graphics.vector.ImageVector, color: Color, label: String, size: Int = 112, onClick: () -> Unit) {
+    Surface(onClick = onClick, modifier = Modifier.size(size.dp), shape = CircleShape, color = color, tonalElevation = 8.dp) {
         if (!imageUri.isNullOrBlank()) {
-            AsyncImage(
-                model = imageUri, 
-                contentDescription = label, 
-                modifier = Modifier.fillMaxSize(), 
-                contentScale = ContentScale.Crop
-            )
+            AsyncImage(model = imageUri, contentDescription = label, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         } else {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size((size * 0.45).dp))
-            }
+            Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size((size * 0.45).dp)) }
         }
     }
 }
@@ -458,53 +405,18 @@ private fun formatDuration(seconds: Long): String {
 @Composable
 private fun DtmfPad(onTone: (Char) -> Unit, onStop: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val toneGenerator = remember {
-        try { ToneGenerator(AudioManager.STREAM_DTMF, 80) } catch (_: Exception) { null }
-    }
-    
-    DisposableEffect(Unit) {
-        onDispose { toneGenerator?.release() }
-    }
-
+    val toneGenerator = remember { try { ToneGenerator(AudioManager.STREAM_DTMF, 80) } catch (_: Exception) { null } }
+    DisposableEffect(Unit) { onDispose { toneGenerator?.release() } }
     fun playToneLocal(ch: Char) {
-        val tone = when (ch) {
-            '1' -> ToneGenerator.TONE_DTMF_1
-            '2' -> ToneGenerator.TONE_DTMF_2
-            '3' -> ToneGenerator.TONE_DTMF_3
-            '4' -> ToneGenerator.TONE_DTMF_4
-            '5' -> ToneGenerator.TONE_DTMF_5
-            '6' -> ToneGenerator.TONE_DTMF_6
-            '7' -> ToneGenerator.TONE_DTMF_7
-            '8' -> ToneGenerator.TONE_DTMF_8
-            '9' -> ToneGenerator.TONE_DTMF_9
-            '0' -> ToneGenerator.TONE_DTMF_0
-            '*' -> ToneGenerator.TONE_DTMF_S
-            '#' -> ToneGenerator.TONE_DTMF_P
-            else -> -1
-        }
-        if (tone != -1) {
-            toneGenerator?.startTone(tone, 150)
-        }
+        val tone = when (ch) { '1' -> ToneGenerator.TONE_DTMF_1; '2' -> ToneGenerator.TONE_DTMF_2; '3' -> ToneGenerator.TONE_DTMF_3; '4' -> ToneGenerator.TONE_DTMF_4; '5' -> ToneGenerator.TONE_DTMF_5; '6' -> ToneGenerator.TONE_DTMF_6; '7' -> ToneGenerator.TONE_DTMF_7; '8' -> ToneGenerator.TONE_DTMF_8; '9' -> ToneGenerator.TONE_DTMF_9; '0' -> ToneGenerator.TONE_DTMF_0; '*' -> ToneGenerator.TONE_DTMF_S; '#' -> ToneGenerator.TONE_DTMF_P; else -> -1 }
+        if (tone != -1) toneGenerator?.startTone(tone, 150)
     }
-
     Column(Modifier.padding(16.dp).navigationBarsPadding()) {
         val rows = listOf(listOf('1', '2', '3'), listOf('4', '5', '6'), listOf('7', '8', '9'), listOf('*', '0', '#'))
         rows.forEach { r ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 r.forEach { ch ->
-                    OutlinedButton(
-                        onClick = { 
-                            scope.launch { 
-                                playToneLocal(ch)
-                                onTone(ch)
-                                delay(200)
-                                onStop()
-                            } 
-                        }, 
-                        modifier = Modifier.weight(1f).height(60.dp)
-                    ) {
-                        Text(ch.toString(), style = MaterialTheme.typography.titleLarge)
-                    }
+                    OutlinedButton(onClick = { scope.launch { playToneLocal(ch); onTone(ch); delay(200); onStop() } }, modifier = Modifier.weight(1f).height(60.dp)) { Text(ch.toString(), style = MaterialTheme.typography.titleLarge) }
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -513,7 +425,6 @@ private fun DtmfPad(onTone: (Char) -> Unit, onStop: () -> Unit) {
 }
 
 private data class ContactInfo(val name: String?, val photoUri: String?)
-
 private suspend fun lookupContactInfoByNumber(context: Context, num: String): ContactInfo = withContext(Dispatchers.IO) {
     if (num.isBlank()) return@withContext ContactInfo(null, null)
     val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(num))

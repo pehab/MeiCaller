@@ -15,7 +15,6 @@ class MyInCallService : InCallService() {
 
     override fun onCreate() {
         super.onCreate()
-        // Register this service instance with the repository
         CallRepo.setService(this)
     }
 
@@ -27,18 +26,20 @@ class MyInCallService : InCallService() {
     override fun onCallAdded(call: Call) {
         super.onCallAdded(call)
         // Store the new call in the repository
-        CallRepo.setCall(call)
+        CallRepo.addOrUpdateCall(call)
+        
+        // Refresh the whole state to be sure we have everything
         CallRepo.refreshFromService(this)
 
-        // Automatically launch the in-call UI activity. The system will handle ringing.
+        // Launch the UI. If it's already running, the new intent will reach it.
         val i = Intent(this, InCallActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         startActivity(i)
     }
 
     override fun onCallRemoved(call: Call) {
-        CallRepo.clearIfSame(call)
+        CallRepo.removeCall(call)
         super.onCallRemoved(call)
     }
 
