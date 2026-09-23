@@ -105,7 +105,7 @@ object CallRepo {
         mutableCalls.value = service.calls ?: emptyList()
 
         if (Build.VERSION.SDK_INT >= 34) {
-            mutableCurrentEndpoint.value = service.currentCallEndpoint
+            mutableCurrentEndpoint.value = currentCallEndpointOrNull(service)
         } else {
             @Suppress("DEPRECATION")
             val cas = service.callAudioState
@@ -131,16 +131,16 @@ object CallRepo {
 
     @androidx.annotation.RequiresApi(34)
     private fun toggleSpeakerApi34(context: Context, service: InCallService) {
-        val current = mutableCurrentEndpoint.value ?: service.currentCallEndpoint
+        val current = mutableCurrentEndpoint.value ?: currentCallEndpointOrNull(service) ?: return
         val available = mutableAvailableEndpoints.value
         if (available.isEmpty()) return
 
-        val targetType = if (current.endpointType == CallEndpoint.TYPE_SPEAKER) {
-            CallEndpoint.TYPE_EARPIECE
+        val target = if (current.endpointType == CallEndpoint.TYPE_SPEAKER) {
+            available.firstOrNull { it.endpointType == CallEndpoint.TYPE_EARPIECE }
+                ?: available.firstOrNull { it.endpointType != CallEndpoint.TYPE_SPEAKER }
         } else {
-            CallEndpoint.TYPE_SPEAKER
-        }
-        val target = available.firstOrNull { it.endpointType == targetType } ?: return
+            available.firstOrNull { it.endpointType == CallEndpoint.TYPE_SPEAKER }
+        } ?: return
 
         service.requestCallEndpointChange(
             target,
@@ -151,6 +151,16 @@ object CallRepo {
             },
         )
     }
+
+    @androidx.annotation.RequiresApi(34)
+    private fun currentCallEndpointOrNull(service: InCallService): CallEndpoint? =
+        try {
+            service.currentCallEndpoint
+        } catch (_: NullPointerException) {
+            // Android can transiently return null while the call/audio route is changing,
+            // despite the framework API being exposed to Kotlin as non-null.
+            null
+        }
 
     private fun toggleSpeakerLegacy(service: InCallService) {
         @Suppress("DEPRECATION")
