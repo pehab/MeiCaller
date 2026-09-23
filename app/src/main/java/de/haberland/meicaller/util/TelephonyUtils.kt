@@ -155,7 +155,7 @@ fun markMissedCallsAsSeen(context: Context) {
 
         // Notify providers to update system UI
         cr.notifyChange(CallLog.Calls.CONTENT_URI, null)
-    } catch (t: Throwable) {
-        Log.w("MeiCaller", "markMissedCallsAsSeen failed: ${t.message}")
+    } catch (e: SecurityException) {
+        Log.w("MeiCaller", "markMissedCallsAsSeen failed: ${e.message}")
     }
 }
