@@ -83,7 +83,6 @@ dependencies {
     // Firebase & Crashlytics
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.crashlytics)
-    implementation(libs.firebase.analytics)
 
     // Für einstellbare Farben
     implementation(libs.androidx.datastore.preferences)
