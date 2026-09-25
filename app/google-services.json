@@ -12,7 +12,12 @@
           "package_name": "de.haberland.meicaller"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "66101709976-vj5e359qe9nsvjj2vh95v609jkpu4sdm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyC10ExcoCFeDKLQ2k7JwNk8l9REHXxZ2gs"
@@ -20,7 +25,176 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "66101709976-vj5e359qe9nsvjj2vh95v609jkpu4sdm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:66101709976:android:186b05752907166623d4ed",
+        "android_client_info": {
+          "package_name": "de.haberland.meihome"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "66101709976-akg0kv1kiradd57siefttk5osf88scfv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "de.haberland.meihome",
+            "certificate_hash": "cacd122eba9f6a32b914d7240f9026c096406e14"
+          }
+        },
+        {
+          "client_id": "66101709976-vj5e359qe9nsvjj2vh95v609jkpu4sdm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC10ExcoCFeDKLQ2k7JwNk8l9REHXxZ2gs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "66101709976-vj5e359qe9nsvjj2vh95v609jkpu4sdm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:66101709976:android:d50ec9423e55aef523d4ed",
+        "android_client_info": {
+          "package_name": "de.haberland.meilists"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "66101709976-85ob932p97ebnlkv4ingb3vqq34jpaqu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "de.haberland.meilists",
+            "certificate_hash": "cbfd0a082ed3a69a1eda0f781a7fc63074a34a72"
+          }
+        },
+        {
+          "client_id": "66101709976-nb2oijg0o5qecehln1o65hl7b18gbrkv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "de.haberland.meilists",
+            "certificate_hash": "f9fbbbfbb71404644a71a3c3aed3518e4ecd9582"
+          }
+        },
+        {
+          "client_id": "66101709976-scq7up06ofpph2ps4du48t14oghtb9ep.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "de.haberland.meilists",
+            "certificate_hash": "8ad61a60e614e44316d19e18f9b7ab39952e4948"
+          }
+        },
+        {
+          "client_id": "66101709976-vj5e359qe9nsvjj2vh95v609jkpu4sdm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC10ExcoCFeDKLQ2k7JwNk8l9REHXxZ2gs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "66101709976-vj5e359qe9nsvjj2vh95v609jkpu4sdm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:66101709976:android:48a84ccc4ce92e7023d4ed",
+        "android_client_info": {
+          "package_name": "de.haberland.meiocrworkout"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "66101709976-6g4i1qjsq3oub8gl21ec3taj159v52lg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "de.haberland.meiocrworkout",
+            "certificate_hash": "a34c06c308b8154e70bacb00fc000a55be38c715"
+          }
+        },
+        {
+          "client_id": "66101709976-vj5e359qe9nsvjj2vh95v609jkpu4sdm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC10ExcoCFeDKLQ2k7JwNk8l9REHXxZ2gs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "66101709976-vj5e359qe9nsvjj2vh95v609jkpu4sdm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:66101709976:android:60610f78e3af40a923d4ed",
+        "android_client_info": {
+          "package_name": "de.haberland.meitowerdefense"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "66101709976-gb7llngcoutj5rqgam22bp0vrebceq3h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "de.haberland.meitowerdefense",
+            "certificate_hash": "cc84e1ba228bebf65f4632210e56fcd177f7d87a"
+          }
+        },
+        {
+          "client_id": "66101709976-vj5e359qe9nsvjj2vh95v609jkpu4sdm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC10ExcoCFeDKLQ2k7JwNk8l9REHXxZ2gs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "66101709976-vj5e359qe9nsvjj2vh95v609jkpu4sdm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
