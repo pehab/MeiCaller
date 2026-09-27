@@ -1,7 +1,7 @@
 [versions]
 agp = "9.0.1"
 coilCompose = "2.7.0"
-composeBomVersion = "2026.09.00"
+composeBomVersion = "2026.06.01"
 datastorePreferences = "1.2.0"
 kotlin = "2.3.10"
 lifecycleRuntimeKtx = "2.10.0"

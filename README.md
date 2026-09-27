@@ -1,7 +1,7 @@
 # MeiCaller
 
 MeiCaller is an Android phone app prototype written in **Kotlin** and **Jetpack Compose**.
-It provides a custom dialer experience, in-call UI, call history access, favorites, and configurable UI themes.
+It provides a custom dialer experience, in-call UI, call history access, favorites, configurable UI themes, in-app update support, and Firebase Crashlytics integration.
 
 ## Features
 
@@ -11,6 +11,8 @@ It provides a custom dialer experience, in-call UI, call history access, favorit
 - **Missed-call handling** activity integration.
 - **Theme customization** (primary/accent colors) persisted with DataStore.
 - **Customizable visual assets** such as button/background images.
+- **In-app update support** through Google Play.
+- **Crash reporting** with Firebase Crashlytics.
 
 ## Tech stack
 
@@ -18,6 +20,8 @@ It provides a custom dialer experience, in-call UI, call history access, favorit
 - Android SDK (compile/target SDK 36)
 - Gradle Kotlin DSL
 - Ktlint + Detekt for static checks
+- Firebase Crashlytics
+- Google Play In-App Updates
 
 ## Requirements
 
@@ -89,6 +93,10 @@ The app requests permissions related to telephony and call features, including:
 
 See [PRIVACY_POLICY.md](PRIVACY_POLICY.md).
 
+## Current version
+
+- **Prototype 17** (`versionCode 17`)
+
 ## Status
 
-This project is currently a **prototype** and may change rapidly.
+MeiCaller is currently in active prototype testing. Stability fixes and dependency updates are validated through GitHub Actions before new Play test builds are published.
