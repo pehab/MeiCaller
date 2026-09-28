@@ -27,6 +27,7 @@ It provides a custom dialer experience, in-call UI, call history access, favorit
 
 - Android Studio (latest stable recommended)
 - JDK 17
+- Android 12 / API 31 or newer on the target device
 - Android SDK 36 platform & build tools
 - An Android device/emulator (phone-capable device recommended for telephony features)
 
@@ -35,39 +36,45 @@ It provides a custom dialer experience, in-call UI, call history access, favorit
 1. Clone the repository:
 
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/pehab/MeiCaller.git
    cd MeiCaller
    ```
 
 2. Build the debug app:
 
    ```bash
-   ./gradlew :app:assembleDebug
+   bash gradlew :app:assembleDebug
    ```
 
 3. Install on a connected device:
 
    ```bash
-   ./gradlew :app:installDebug
+   bash gradlew :app:installDebug
    ```
 
-4. Run the app from launcher as **MeiCaller**.
+4. Run the app from launcher as **MeiCaller**, select it as the default phone app when prompted, and grant the requested permissions. Verify real calls on a phone; a successful APK build does not validate device-specific telephony behavior.
 
 ## Quality checks
 
-Run all configured checks:
+Run all configured checks (CI runs these before building):
 
 ```bash
-./gradlew qualityCheck
+bash gradlew qualityCheck
 ```
 
 Or run individually:
 
 ```bash
-./gradlew :app:ktlintCheck
-./gradlew :app:detekt
-./gradlew :app:lint
+bash gradlew :app:ktlintCheck
+bash gradlew :app:detekt
+bash gradlew :app:lint
 ```
+
+The app module currently has no unit-test sources; `testDebugUnitTest` reports `NO-SOURCE`. The `buildSrc` module contains 11 JVM regression tests for the platform compatibility patch, run in CI with `bash gradlew -p buildSrc test`. CI also builds the debug APK and release bundle. These tests do not cover telephony behavior. Detekt runs, but `app/config/detekt/detekt.yml` currently sets `maxIssues: 999999`, so its findings are not an effective failure gate. Review the report under `app/build/reports/detekt/`; introduce a reviewed baseline and a strict budget in a separate cleanup.
+
+## Firebase configuration
+
+`app/google-services.json` configures Firebase Crashlytics. For a separate Firebase project, register the application ID `de.haberland.meicaller` and replace that file with the matching configuration. Play in-app updates require a Play-installed build and an available update in the corresponding track.
 
 ## Permissions
 
