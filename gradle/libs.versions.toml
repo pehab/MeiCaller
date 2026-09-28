@@ -11,6 +11,7 @@ playAppUpdate = "2.1.0"
 firebaseBom = "34.9.0"
 
 [libraries]
+android-gradle-plugin = { module = "com.android.tools.build:gradle", version.ref = "agp" }
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBomVersion" }
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastorePreferences" }

@@ -29,11 +29,14 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
+      - name: Test platform compatibility patch
+        run: ./gradlew -p buildSrc test --warning-mode=all
+
       - name: Quality checks
         run: ./gradlew qualityCheck --warning-mode=all
 
       - name: Test and build debug APK
-        run: ./gradlew testDebugUnitTest assembleDebug --warning-mode=all
+        run: ./gradlew testDebugUnitTest assembleDebug bundleRelease --warning-mode=all
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7
