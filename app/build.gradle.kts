@@ -1,7 +1,9 @@
+import com.android.build.api.instrumentation.InstrumentationScope
+import de.haberland.build.PlatformApiVisitorFactory
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    alias(libs.plugins.android.application)
+    id("com.android.application")
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.services)
     alias(libs.plugins.firebase.crashlytics)
@@ -17,8 +19,8 @@ android {
         applicationId = "de.haberland.meicaller"
         minSdk = 31
         targetSdk = 36
-        versionCode = 17
-        versionName = "Prototype 17"
+        versionCode = 18
+        versionName = "Prototype 18"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -96,4 +98,15 @@ tasks.register("qualityCheck") {
         ":app:detekt",
         ":app:lint",
     )
+}
+
+// Apply to dependency bytecode in debug AND release, including Android Studio bundles.
+// Both replacements preserve the operand stack, so existing stack map frames remain valid.
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.instrumentation.transformClassesWith(
+            PlatformApiVisitorFactory::class.java,
+            InstrumentationScope.ALL,
+        ) {}
+    }
 }
