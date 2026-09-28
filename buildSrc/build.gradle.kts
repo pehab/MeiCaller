@@ -8,7 +8,7 @@ repositories {
 }
 
 dependencies {
-    implementation("com.android.tools.build:gradle-api:9.0.1")
+    implementation(libs.android.gradle.plugin)
     implementation("org.ow2.asm:asm:9.7.1")
     testImplementation("junit:junit:4.13.2")
 }

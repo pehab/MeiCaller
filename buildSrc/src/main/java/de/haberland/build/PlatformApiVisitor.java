@@ -8,6 +8,14 @@ import org.objectweb.asm.Opcodes;
 public final class PlatformApiVisitor extends ClassVisitor {
     public static final String BRIDGE = "de/haberland/meicaller/compat/PlatformApiCompat";
     private int replacements;
+    private String className;
+
+    @Override
+    public void visit(int version, int access, String name, String signature,
+                      String superName, String[] interfaces) {
+        className = name;
+        super.visit(version, access, name, signature, superName, interfaces);
+    }
 
     public PlatformApiVisitor(ClassVisitor delegate) {
         super(Opcodes.ASM9, delegate);
@@ -51,6 +59,7 @@ public final class PlatformApiVisitor extends ClassVisitor {
         if (replacements == 0) {
             throw new IllegalStateException("AndroidX compatibility target changed; review the platform API patch.");
         }
+        System.out.println("MeiCaller platform guard: " + className + " (" + replacements + " accesses)");
         super.visitEnd();
     }
 }
