@@ -11,12 +11,16 @@ public abstract class PlatformApiVisitorFactory
     @Override
     public boolean isInstrumentable(ClassData data) {
         String name = data.getClassName();
-        return name.equals("androidx.compose.ui.text.font.FontWeightAdjustmentHelperApi31")
+        return name.equals("androidx.compose.ui.platform.AndroidComposeView")
+                || name.equals("androidx.compose.ui.text.font.FontWeightAdjustmentHelperApi31")
                 || name.equals("androidx.core.view.WindowInsetsCompat$TypeImpl34");
     }
 
     @Override
     public ClassVisitor createClassVisitor(ClassContext context, ClassVisitor next) {
+        if (context.getCurrentClassData().getClassName().equals("androidx.compose.ui.platform.AndroidComposeView")) {
+            return new TranslationApiVisitor(next);
+        }
         return new PlatformApiVisitor(next);
     }
 }
