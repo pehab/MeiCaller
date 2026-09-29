@@ -70,7 +70,7 @@ bash gradlew :app:detekt
 bash gradlew :app:lint
 ```
 
-The app module currently has no unit-test sources; `testDebugUnitTest` reports `NO-SOURCE`. The `buildSrc` module contains 11 JVM regression tests for the platform compatibility patch, run in CI with `bash gradlew -p buildSrc test`. CI also builds the debug APK and release bundle. These tests do not cover telephony behavior. Detekt runs, but `app/config/detekt/detekt.yml` currently sets `maxIssues: 999999`, so its findings are not an effective failure gate. Review the report under `app/build/reports/detekt/`; introduce a reviewed baseline and a strict budget in a separate cleanup.
+The app module currently has no unit-test sources; `testDebugUnitTest` reports `NO-SOURCE`. The `buildSrc` module contains JVM regression tests for the platform compatibility patch, run in CI with `bash gradlew -p buildSrc test`. CI also builds the debug APK and release bundle. These tests do not cover telephony behavior. Detekt runs, but `app/config/detekt/detekt.yml` currently sets `maxIssues: 999999`, so its findings are not an effective failure gate. Review the report under `app/build/reports/detekt/`; introduce a reviewed baseline and a strict budget in a separate cleanup.
 
 ## Firebase configuration
 
@@ -102,7 +102,7 @@ See [PRIVACY_POLICY.md](PRIVACY_POLICY.md).
 
 ## Current version
 
-- **Prototype 18** (`versionCode 18`)
+- **Prototype 19** (`versionCode 19`)
 
 ## Status
 
@@ -128,3 +128,11 @@ bash gradlew -p buildSrc test
 ```
 
 Tests reproduce the missing-field failure using a synthetic framework class, execute the transformed bytecode, verify overlay bit preservation and check that normal platform values and unrelated failures are preserved. CI also builds the release bundle. Physical-device verification and monitoring of new Prototype 18 events remain necessary; historic Prototype 16/17 crash counts will not disappear after an update.
+
+## Translation compatibility fix in Prototype 19
+
+A Prototype 18 trace reports `NoClassDefFoundError` for `android.view.translation.ViewTranslationCallback` in `AndroidComposeView.onAttachedToWindow`. This is a third missing-platform-API site, separate from the font/insets accesses guarded in Prototype 18. The trace alone does not identify the affected device or explain why its framework lacks the API.
+
+The build now also transforms the translation helper singleton access and calls in Compose's attach/detach lifecycle methods. The bridge checks that the callback class and both public View methods exist before loading the original AndroidX translation helper. If present, the original helper runs unchanged; otherwise only optional system UI translation registration/cleanup is skipped. Other lifecycle work and unrelated failures are preserved. Both original font/insets guards remain active.
+
+The transformation requires exactly one attach and one detach call and two singleton accesses; changed Compose bytecode fails the build for review. The currently resolved `ui-android:1.11.4` binary was inspected. Reflection depends on the helper name: release minification is currently disabled; enabling it requires explicit keep rules and revalidation. Tests exercise missing APIs, unchanged supported behavior, failure propagation and transformed attach/detach bytecode. CI still validates debug and release bundle builds. Device confirmation after rollout remains necessary.
