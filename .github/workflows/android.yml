@@ -8,6 +8,8 @@ on:
 
 jobs:
   build:
+    outputs:
+      githubSigningReady: ${{ steps.githubSigning.outputs.ready }}
     runs-on: ubuntu-24.04
 
     steps:
@@ -23,6 +25,14 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Verify update routing and APK metadata contract
+        run: bash scripts/test-update-contract.sh
+      - name: Configure existing GitHub APK signing identity
+        id: githubSigning
+        env:
+          MEI_SIGNING_JSON: ${{ secrets.MEI_SIGNING_JSON }}
+          EXISTING_SIGNING_READY: false
+        run: python3 .github/scripts/setup-github-signing.py
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
@@ -42,4 +52,23 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: MeiCaller-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/output-metadata.json
+
+  github-updates:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.build.outputs.githubSigningReady == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download tested signed APK
+        run: gh run download "$GITHUB_RUN_ID" --name MeiCaller-debug --dir apk
+      - name: Publish immutable APK and verified update manifest
+        run: python3 .github/scripts/publish-github-update.py

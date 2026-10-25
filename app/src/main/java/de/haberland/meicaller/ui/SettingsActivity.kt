@@ -121,6 +121,7 @@ private fun SettingsScreen(
     onClearReject: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val updateContext = androidx.compose.ui.platform.LocalContext.current
     Scaffold(
         topBar = {
             TopAppBar(
@@ -141,6 +142,14 @@ private fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            OutlinedButton(
+                onClick = {
+                    de.meiapps.updates.GitHubUpdates.showSettings(updateContext, "pehab/MeiCaller")
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("App-Updates")
+            }
             // Colors Section
             SettingsSection(title = stringResource(R.string.settings_section_colors)) {
                 ColorPickerInput(
