@@ -19,8 +19,8 @@ android {
         applicationId = "de.haberland.meicaller"
         minSdk = 31
         targetSdk = 36
-        versionCode = 19
-        versionName = "Prototype 19"
+        versionCode = 20
+        versionName = "Prototype 20"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -108,5 +108,21 @@ androidComponents {
             PlatformApiVisitorFactory::class.java,
             InstrumentationScope.ALL,
         ) {}
+    }
+}
+
+// Optional existing APK signing identity restored by CI; never commit a keystore.
+android {
+    val githubStore = System.getenv("MEI_GITHUB_STORE_FILE")
+    if (!githubStore.isNullOrBlank()) {
+        signingConfigs {
+            create("githubUpdates") {
+                storeFile = file(githubStore)
+                storePassword = System.getenv("MEI_GITHUB_STORE_PASSWORD")
+                keyAlias = System.getenv("MEI_GITHUB_KEY_ALIAS")
+                keyPassword = System.getenv("MEI_GITHUB_KEY_PASSWORD")
+            }
+        }
+        buildTypes.getByName("debug").signingConfig = signingConfigs.getByName("githubUpdates")
     }
 }

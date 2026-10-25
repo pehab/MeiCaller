@@ -136,3 +136,7 @@ A Prototype 18 trace reports `NoClassDefFoundError` for `android.view.translatio
 The build now also transforms the translation helper singleton access and calls in Compose's attach/detach lifecycle methods. The bridge checks that the callback class and both public View methods exist before loading the original AndroidX translation helper. If present, the original helper runs unchanged; otherwise only optional system UI translation registration/cleanup is skipped. Other lifecycle work and unrelated failures are preserved. Both original font/insets guards remain active.
 
 The transformation requires exactly one attach and one detach call and two singleton accesses; changed Compose bytecode fails the build for review. The currently resolved `ui-android:1.11.4` binary was inspected. Reflection depends on the helper name: release minification is currently disabled; enabling it requires explicit keep rules and revalidation. Tests exercise missing APIs, unchanged supported behavior, failure propagation and transformed attach/detach bytecode. CI still validates debug and release bundle builds. Device confirmation after rollout remains necessary.
+
+## Updatequelle
+
+Updates folgen der tatsächlichen Installationsquelle: Google Play für Play-Installationen, GitHub für direkt installierte APKs. [Bedienung, Signierung und Veröffentlichung](docs/UPDATES.md).

@@ -92,9 +92,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        appUpdateManager = AppUpdateManagerFactory.create(this)
-        
-        checkForUpdates()
+        de.meiapps.updates.GitHubUpdates.attach(this, "pehab/MeiCaller") { }
+        if (de.meiapps.updates.UpdateSource.isPlay(this)) {
+            appUpdateManager = AppUpdateManagerFactory.create(this)
+            checkForUpdates()
+        }
         handleIntent(intent)
 
         setContent {
@@ -146,6 +148,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkForUpdates() {
+        if (!de.meiapps.updates.UpdateSource.isPlay(this)) return
         val appUpdateInfoTask = appUpdateManager.appUpdateInfo
         appUpdateInfoTask.addOnSuccessListener { appUpdateInfo ->
             if (appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE
@@ -162,6 +165,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!::appUpdateManager.isInitialized || !de.meiapps.updates.UpdateSource.isPlay(this)) return
         appUpdateManager.appUpdateInfo.addOnSuccessListener { appUpdateInfo ->
             if (appUpdateInfo.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) {
                 appUpdateManager.startUpdateFlowForResult(
